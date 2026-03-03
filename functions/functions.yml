@@ -1,0 +1,14 @@
+version: 2
+
+functions:
+  - name: snake_to_camel_case
+    description: "Converts a snake_case string to camelCase format"
+    config:
+      language: python
+      runtime_version: "3.11"
+      entry_point: snake_to_camel_case
+    returns:
+      data_type: string
+    arguments:
+      - name: input_string
+        data_type: string
