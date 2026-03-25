@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Databricks → Snowflake Migration Dashboard</title>
+<style>
+:root{
+  --bg:#0f1117;--surface:#1a1d27;--surface2:#242736;--border:#2e3147;
+  --text:#e2e4f0;--muted:#7b80a0;
+  --blue:#4f8ef7;--green:#34d399;--amber:#fbbf24;--red:#f87171;
+  --purple:#a78bfa;--cyan:#22d3ee;--orange:#fb923c;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+a{color:inherit;text-decoration:none}
+
+/* ── Layout ── */
+.wrap{max-width:1380px;margin:0 auto;padding:24px 20px}
+
+/* ── Header ── */
+.hdr{margin-bottom:24px}
+.hdr-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(79,142,247,.12);border:1px solid rgba(79,142,247,.3);border-radius:20px;padding:4px 12px;font-size:11px;color:var(--blue);margin-bottom:8px}
+.hdr-badge span{width:7px;height:7px;border-radius:50%;background:var(--blue);animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.hdr h1{font-size:24px;font-weight:800;letter-spacing:-.5px}
+.hdr h1 em{color:var(--blue);font-style:normal}
+.hdr-sub{color:var(--muted);font-size:13px;margin-top:3px}
+.hdr-pills{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+.pill{display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:5px 12px;font-size:12px;color:var(--muted)}
+.pill strong{color:var(--text)}
+
+/* ── Tabs ── */
+.tabs{display:flex;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:4px;margin-bottom:22px;width:fit-content;overflow-x:auto}
+.tab{padding:7px 18px;border-radius:7px;border:none;background:transparent;color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;transition:all .15s}
+.tab.on{background:var(--blue);color:#fff}
+.tab:hover:not(.on){color:var(--text);background:var(--surface2)}
+
+/* ── KPI grid ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin-bottom:20px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 18px 14px;position:relative;overflow:hidden;transition:border-color .2s}
+.kpi:hover{border-color:rgba(79,142,247,.5)}
+.kpi::after{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:12px 12px 0 0}
+.kpi.c-blue::after{background:var(--blue)}.kpi.c-green::after{background:var(--green)}
+.kpi.c-amber::after{background:var(--amber)}.kpi.c-red::after{background:var(--red)}
+.kpi.c-purple::after{background:var(--purple)}.kpi.c-cyan::after{background:var(--cyan)}
+.kpi-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:7px}
+.kpi-val{font-size:34px;font-weight:800;line-height:1}
+.kpi.c-blue .kpi-val{color:var(--blue)}.kpi.c-green .kpi-val{color:var(--green)}
+.kpi.c-amber .kpi-val{color:var(--amber)}.kpi.c-red .kpi-val{color:var(--red)}
+.kpi.c-purple .kpi-val{color:var(--purple)}.kpi.c-cyan .kpi-val{color:var(--cyan)}
+.kpi-sub{font-size:11px;color:var(--muted);margin-top:5px}
+.kpi-tag{display:inline-block;margin-top:8px;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700}
+.kpi-tag.success{background:rgba(52,211,153,.15);color:var(--green)}
+.kpi-tag.warn{background:rgba(251,191,36,.15);color:var(--amber)}
+.kpi-tag.danger{background:rgba(248,113,113,.15);color:var(--red)}
+.kpi-tag.info{background:rgba(79,142,247,.15);color:var(--blue)}
+
+/* ── Cards ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px}
+.card.green-glow{border-color:rgba(52,211,153,.3)}
+.card-title{font-size:14px;font-weight:700;margin-bottom:4px}
+.card-desc{font-size:12px;color:var(--muted);margin-bottom:16px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px}
+.grid-12{display:grid;grid-template-columns:1fr 2fr;gap:16px;margin-bottom:16px}
+.grid-21{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:900px){.grid-2,.grid-3,.grid-12,.grid-21{grid-template-columns:1fr}}
+
+/* ── Progress bar ── */
+.prog-wrap{background:var(--surface2);border-radius:6px;height:8px;overflow:hidden;margin-top:6px}
+.prog{height:100%;border-radius:6px;transition:width .6s ease}
+
+/* ── Tables ── */
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);border-bottom:1px solid var(--border)}
+.tbl td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:var(--surface2)}
+.tbl tr.hl td{background:rgba(52,211,153,.04)}
+
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
+.badge::before{content:'';width:6px;height:6px;border-radius:50%}
+.b-migrated{background:rgba(52,211,153,.12);color:var(--green);border:1px solid rgba(52,211,153,.3)}.b-migrated::before{background:var(--green)}
+.b-pending{background:rgba(251,191,36,.12);color:var(--amber);border:1px solid rgba(251,191,36,.3)}.b-pending::before{background:var(--amber)}
+.cpx{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700}
+.cpx-h{background:rgba(248,113,113,.1);color:var(--red)}
+.cpx-m{background:rgba(251,191,36,.1);color:var(--amber)}
+.cpx-l{background:rgba(52,211,153,.1);color:var(--green)}
+.risk-h{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.3)}
+.risk-m{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;background:rgba(251,191,36,.1);color:var(--amber);border:1px solid rgba(251,191,36,.3)}
+.risk-l{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.3)}
+.pass-badge{display:inline-block;padding:2px 9px;border-radius:12px;font-size:11px;font-weight:700;background:rgba(52,211,153,.12);color:var(--green);border:1px solid rgba(52,211,153,.3)}
+
+/* ── Timeline ── */
+.timeline{display:flex;flex-direction:column;gap:0}
+.tl-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+.tl-item:last-child{border-bottom:none}
+.tl-dot{width:10px;height:10px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.tl-dot.pass{background:var(--green);box-shadow:0 0 8px rgba(52,211,153,.5)}
+.tl-info{flex:1}
+.tl-name{font-size:13px;font-weight:600}
+.tl-detail{font-size:11px;color:var(--muted);margin-top:2px}
+.tl-time{font-size:11px;color:var(--muted);white-space:nowrap}
+
+/* ── Lineage diagram ── */
+.lineage-wrap{display:grid;grid-template-columns:1fr 30px 1fr 30px 1fr;gap:10px;align-items:start;margin-top:8px}
+.ln-node{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;margin-bottom:5px}
+.ln-node.src{border-color:rgba(79,142,247,.4)}.ln-node.mdl{border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.05)}.ln-node.out{border-color:rgba(167,139,250,.4)}
+.ln-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.ln-arr{display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:22px;padding-top:30px}
+code{font-family:'SF Mono',Menlo,monospace;font-size:10px}
+
+/* ── Function pill ── */
+.fn-pill{display:inline-block;background:rgba(79,142,247,.1);border:1px solid rgba(79,142,247,.2);color:var(--blue);border-radius:5px;padding:1px 6px;font-family:monospace;font-size:10px;margin:1px}
+.fn-pill.ok{background:rgba(52,211,153,.1);border-color:rgba(52,211,153,.25);color:var(--green)}
+.fn-pill.mod{background:rgba(251,191,36,.1);border-color:rgba(251,191,36,.25);color:var(--amber)}
+
+/* ── Section heading ── */
+.sec{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.sec::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* ── SVG charts ── */
+.chart-svg{width:100%;overflow:visible}
+.bar-label{font:11px/1 -apple-system,sans-serif;fill:var(--muted)}
+.bar-val{font:11px/1 -apple-system,sans-serif;fill:var(--muted)}
+.axis-line{stroke:var(--border);stroke-width:1}
+.grid-line{stroke:var(--border);stroke-width:1;stroke-dasharray:3 4}
+.tooltip-bg{fill:var(--surface2);stroke:var(--border);rx:6}
+
+/* ── Info box ── */
+.info-box{background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.2);border-radius:10px;padding:14px 16px;font-size:12px;color:var(--muted);line-height:1.8}
+.info-box strong{color:var(--text)}
+
+/* ── Scrollable ── */
+.scroll{overflow-x:auto}
+
+/* ── Category dot ── */
+.cat-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- HEADER -->
+<div class="hdr">
+  <div class="hdr-badge"><span></span>Live Migration Tracker</div>
+  <h1>Databricks <em>→</em> Snowflake Migration</h1>
+  <div class="hdr-sub">dbt Model Migration Dashboard · jaffle-shop-core · March 25, 2026</div>
+  <div class="hdr-pills">
+    <div class="pill">📅 Last updated: <strong>March 26, 2026</strong></div>
+    <div class="pill">🎯 Latest model: <strong style="color:var(--green)">customer_scd_tracking ✓</strong></div>
+    <div class="pill">🏗 Target: <strong>anas.js_dbt (Snowflake)</strong></div>
+    <div class="pill">⚡ Full build: <strong style="color:var(--green)">30/30 PASS</strong></div>
+    <div class="pill">🔧 Profile: <strong>jaffle_shop → dev</strong></div>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tabs" id="tabs">
+  <button class="tab on" data-tab="overview">📊 Overview</button>
+  <button class="tab" data-tab="models">📋 All Models</button>
+  <button class="tab" data-tab="validation">✅ Validation</button>
+  <button class="tab" data-tab="functions">🔧 Function Map</button>
+</div>
+
+<!-- ═══════════════ OVERVIEW ═══════════════ -->
+<div id="tab-overview">
+
+<!-- KPIs -->
+<div class="kpi-grid">
+  <div class="kpi c-blue"><div class="kpi-lbl">Total Models</div><div class="kpi-val">10</div><div class="kpi-sub">In migration scope</div><span class="kpi-tag info">100% catalogued</span></div>
+  <div class="kpi c-green"><div class="kpi-lbl">Migrated</div><div class="kpi-val">2</div><div class="kpi-sub">Deployed to Snowflake</div><span class="kpi-tag success">LIVE on Snowflake</span></div>
+  <div class="kpi c-amber"><div class="kpi-lbl">Pending</div><div class="kpi-val">8</div><div class="kpi-sub">Awaiting migration</div><span class="kpi-tag warn">~19.5h estimated</span></div>
+  <div class="kpi c-red"><div class="kpi-lbl">High Complexity</div><div class="kpi-val">4</div><div class="kpi-sub">2 of 4 still pending</div><span class="kpi-tag danger">Needs attention</span></div>
+  <div class="kpi c-purple"><div class="kpi-lbl">Total SQL Lines</div><div class="kpi-val">682</div><div class="kpi-sub">124 migrated (18%)</div></div>
+  <div class="kpi c-cyan"><div class="kpi-lbl">Unique Functions</div><div class="kpi-val">18</div><div class="kpi-sub">Databricks-specific</div><span class="kpi-tag info">All mapped</span></div>
+</div>
+
+<!-- Progress + Donut -->
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title">Migration Progress</div>
+    <div class="card-desc">Completion across all 10 models</div>
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px"><span>Models migrated</span><strong style="color:var(--green)">2 / 10</strong></div>
+        <div class="prog-wrap"><div class="prog" style="width:20%;background:var(--green)"></div></div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px"><span>SQL lines migrated</span><strong style="color:var(--blue)">124 / 682</strong></div>
+        <div class="prog-wrap"><div class="prog" style="width:18%;background:var(--blue)"></div></div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px"><span>Low-complexity models done</span><strong style="color:var(--amber)">0 / 3</strong></div>
+        <div class="prog-wrap"><div class="prog" style="width:0%;background:var(--amber)"></div></div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px"><span>High-complexity models done</span><strong style="color:var(--red)">2 / 4</strong></div>
+        <div class="prog-wrap"><div class="prog" style="width:50%;background:var(--red)"></div></div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px"><span>Effort completed</span><strong style="color:var(--purple)">8h / 27.5h total</strong></div>
+        <div class="prog-wrap"><div class="prog" style="width:29%;background:var(--purple)"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Complexity Distribution</div>
+    <div class="card-desc">Migration complexity across all 10 models</div>
+    <!-- Donut chart via SVG -->
+    <svg viewBox="0 0 260 200" class="chart-svg" style="height:200px">
+      <!-- Donut: High=4 (144°), Medium=3 (108°), Low=3 (108°) -->
+      <!-- high: 0→144 (starts at -90°) -->
+      <path d="M130,100 L130,40 A60,60 0 0,1 181.96,130 Z" fill="#f87171" opacity=".9"/>
+      <!-- medium: 144→252 -->
+      <path d="M130,100 L181.96,130 A60,60 0 0,1 71.96,143.5 Z" fill="#fbbf24" opacity=".9"/>
+      <!-- low: 252→360 -->
+      <path d="M130,100 L71.96,143.5 A60,60 0 0,1 130,40 Z" fill="#34d399" opacity=".9"/>
+      <!-- inner circle (donut hole) -->
+      <circle cx="130" cy="100" r="36" fill="var(--surface)"/>
+      <text x="130" y="96" text-anchor="middle" fill="var(--text)" font-size="18" font-weight="800">10</text>
+      <text x="130" y="110" text-anchor="middle" fill="var(--muted)" font-size="10">models</text>
+      <!-- Legend -->
+      <rect x="16" y="164" width="10" height="10" rx="3" fill="#f87171"/>
+      <text x="30" y="173" fill="var(--muted)" font-size="11">High (4)</text>
+      <rect x="90" y="164" width="10" height="10" rx="3" fill="#fbbf24"/>
+      <text x="104" y="173" fill="var(--muted)" font-size="11">Medium (3)</text>
+      <rect x="178" y="164" width="10" height="10" rx="3" fill="#34d399"/>
+      <text x="192" y="173" fill="var(--muted)" font-size="11">Low (3)</text>
+    </svg>
+  </div>
+</div>
+
+<!-- Effort chart -->
+<div class="grid-2">
+  <div class="card">
+    <div class="card-title">Estimated Migration Effort</div>
+    <div class="card-desc">Hours required per model — green = already migrated</div>
+    <!-- Horizontal bar chart via SVG -->
+    <svg viewBox="0 0 440 310" class="chart-svg" style="height:310px">
+      <defs>
+        <clipPath id="c1"><rect x="110" y="0" width="280" height="300"/></clipPath>
+      </defs>
+      <!-- grid -->
+      <line x1="110" y1="0" x2="110" y2="280" stroke="var(--border)" stroke-width="1"/>
+      <line x1="180" y1="0" x2="180" y2="280" class="grid-line"/>
+      <line x1="250" y1="0" x2="250" y2="280" class="grid-line"/>
+      <line x1="320" y1="0" x2="320" y2="280" class="grid-line"/>
+      <line x1="390" y1="0" x2="390" y2="280" class="grid-line"/>
+      <text x="110" y="294" text-anchor="middle" fill="var(--muted)" font-size="9">0</text>
+      <text x="180" y="294" text-anchor="middle" fill="var(--muted)" font-size="9">1h</text>
+      <text x="250" y="294" text-anchor="middle" fill="var(--muted)" font-size="9">2h</text>
+      <text x="320" y="294" text-anchor="middle" fill="var(--muted)" font-size="9">3h</text>
+      <text x="390" y="294" text-anchor="middle" fill="var(--muted)" font-size="9">4h+</text>
+      <!-- Bars: scale 1h=70px, offset from x=110 -->
+      <!-- clv 6h → capped at 280, show overflow -->
+      <text x="106" y="16" text-anchor="end" fill="var(--muted)" font-size="9">cust_ltv</text>
+      <rect x="110" y="4" width="280" height="16" rx="3" fill="#f87171" opacity=".85"/>
+      <text x="396" y="16" fill="var(--muted)" font-size="9">6h</text>
+      <!-- scd 5h -->
+      <text x="106" y="44" text-anchor="end" fill="var(--muted)" font-size="9">scd_track</text>
+      <rect x="110" y="32" width="233" height="16" rx="3" fill="#f87171" opacity=".7"/>
+      <text x="346" y="44" fill="var(--muted)" font-size="9">5h</text>
+      <!-- arr_analysis 4h -->
+      <text x="106" y="72" text-anchor="end" fill="var(--muted)" font-size="9">arr_anlys</text>
+      <rect x="110" y="60" width="187" height="16" rx="3" fill="#f87171" opacity=".6"/>
+      <text x="302" y="72" fill="var(--muted)" font-size="9">4h</text>
+      <!-- pmt_agg 3h -->
+      <text x="106" y="100" text-anchor="end" fill="var(--muted)" font-size="9">pmt_agg</text>
+      <rect x="110" y="88" width="140" height="16" rx="3" fill="#fbbf24" opacity=".8"/>
+      <text x="255" y="100" fill="var(--muted)" font-size="9">3h</text>
+      <!-- ord_meta 3h → MIGRATED -->
+      <text x="106" y="128" text-anchor="end" fill="var(--green)" font-size="9" font-weight="700">ord_meta</text>
+      <rect x="110" y="116" width="140" height="16" rx="3" fill="#34d399" opacity=".9"/>
+      <text x="255" y="128" fill="var(--green)" font-size="9" font-weight="700">3h ✓</text>
+      <!-- ltv_dates 2h -->
+      <text x="106" y="156" text-anchor="end" fill="var(--muted)" font-size="9">ltv_dates</text>
+      <rect x="110" y="144" width="93" height="16" rx="3" fill="#fbbf24" opacity=".65"/>
+      <text x="208" y="156" fill="var(--muted)" font-size="9">2h</text>  <!-- was 1.5h, bumped visual -->
+      <!-- pmt_pivot 1.5h -->
+      <text x="106" y="184" text-anchor="end" fill="var(--muted)" font-size="9">pmt_pivot</text>
+      <rect x="110" y="172" width="70" height="16" rx="3" fill="#fbbf24" opacity=".55"/>
+      <text x="185" y="184" fill="var(--muted)" font-size="9">1.5h</text>
+      <!-- name_proc 1h -->
+      <text x="106" y="212" text-anchor="end" fill="var(--muted)" font-size="9">name_proc</text>
+      <rect x="110" y="200" width="47" height="16" rx="3" fill="#4f8ef7" opacity=".7"/>
+      <text x="162" y="212" fill="var(--muted)" font-size="9">1h</text>
+      <!-- type_cast 1h -->
+      <text x="106" y="240" text-anchor="end" fill="var(--muted)" font-size="9">type_cast</text>
+      <rect x="110" y="228" width="47" height="16" rx="3" fill="#4f8ef7" opacity=".7"/>
+      <text x="162" y="240" fill="var(--muted)" font-size="9">1h</text>
+      <!-- ord_ranking 0.5h -->
+      <text x="106" y="268" text-anchor="end" fill="var(--muted)" font-size="9">ord_rank</text>
+      <rect x="110" y="256" width="23" height="16" rx="3" fill="#34d399" opacity=".5"/>
+      <text x="138" y="268" fill="var(--muted)" font-size="9">0.5h</text>
+    </svg>
+  </div>
+
+  <div class="card">
+    <div class="card-title">SQL Lines per Model</div>
+    <div class="card-desc">Model size as scope indicator — color = complexity</div>
+    <svg viewBox="0 0 440 310" class="chart-svg" style="height:310px">
+      <line x1="110" y1="0" x2="110" y2="280" stroke="var(--border)" stroke-width="1"/>
+      <line x1="178" y1="0" x2="178" y2="280" class="grid-line"/>
+      <line x1="247" y1="0" x2="247" y2="280" class="grid-line"/>
+      <line x1="316" y1="0" x2="316" y2="280" class="grid-line"/>
+      <line x1="385" y1="0" x2="385" y2="280" class="grid-line"/>
+      <text x="110" y="294" text-anchor="middle" fill="var(--muted)" font-size="9">0</text>
+      <text x="178" y="294" text-anchor="middle" fill="var(--muted)" font-size="9">50</text>
+      <text x="247" y="294" text-anchor="middle" fill="var(--muted)" font-size="9">100</text>
+      <text x="316" y="294" text-anchor="middle" fill="var(--muted)" font-size="9">150</text>
+      <text x="385" y="294" text-anchor="middle" fill="var(--muted)" font-size="9">190</text>
+      <!-- scale: 188 lines → 275px → 1.46px/line -->
+      <!-- clv 188 lines high -->
+      <text x="106" y="16" text-anchor="end" fill="var(--muted)" font-size="9">cust_ltv</text>
+      <rect x="110" y="4" width="275" height="16" rx="3" fill="#f87171" opacity=".85"/>
+      <text x="390" y="16" fill="var(--muted)" font-size="9">188</text>
+      <!-- scd 43 -->
+      <text x="106" y="44" text-anchor="end" fill="var(--muted)" font-size="9">scd_track</text>
+      <rect x="110" y="32" width="63" height="16" rx="3" fill="#f87171" opacity=".7"/>
+      <text x="178" y="44" fill="var(--muted)" font-size="9">43</text>
+      <!-- arr 61 -->
+      <text x="106" y="72" text-anchor="end" fill="var(--muted)" font-size="9">arr_anlys</text>
+      <rect x="110" y="60" width="89" height="16" rx="3" fill="#f87171" opacity=".6"/>
+      <text x="204" y="72" fill="var(--muted)" font-size="9">61</text>
+      <!-- ord_meta 81 green -->
+      <text x="106" y="100" text-anchor="end" fill="var(--green)" font-size="9" font-weight="700">ord_meta</text>
+      <rect x="110" y="88" width="118" height="16" rx="3" fill="#34d399" opacity=".9"/>
+      <text x="233" y="100" fill="var(--green)" font-size="9" font-weight="700">81 ✓</text>
+      <!-- pmt_agg 76 -->
+      <text x="106" y="128" text-anchor="end" fill="var(--muted)" font-size="9">pmt_agg</text>
+      <rect x="110" y="116" width="111" height="16" rx="3" fill="#fbbf24" opacity=".7"/>
+      <text x="226" y="128" fill="var(--muted)" font-size="9">76</text>
+      <!-- pmt_pivot 63 -->
+      <text x="106" y="156" text-anchor="end" fill="var(--muted)" font-size="9">pmt_pivot</text>
+      <rect x="110" y="144" width="92" height="16" rx="3" fill="#fbbf24" opacity=".65"/>
+      <text x="207" y="156" fill="var(--muted)" font-size="9">63</text>
+      <!-- type_cast 68 -->
+      <text x="106" y="184" text-anchor="end" fill="var(--muted)" font-size="9">type_cast</text>
+      <rect x="110" y="172" width="99" height="16" rx="3" fill="#4f8ef7" opacity=".7"/>
+      <text x="214" y="184" fill="var(--muted)" font-size="9">68</text>
+      <!-- ord_rank 64 -->
+      <text x="106" y="212" text-anchor="end" fill="var(--muted)" font-size="9">ord_rank</text>
+      <rect x="110" y="200" width="93" height="16" rx="3" fill="#4f8ef7" opacity=".6"/>
+      <text x="208" y="212" fill="var(--muted)" font-size="9">64</text>
+      <!-- name_proc 48 -->
+      <text x="106" y="240" text-anchor="end" fill="var(--muted)" font-size="9">name_proc</text>
+      <rect x="110" y="228" width="70" height="16" rx="3" fill="#34d399" opacity=".6"/>
+      <text x="185" y="240" fill="var(--muted)" font-size="9">48</text>
+      <!-- ltv_dates 38 -->
+      <text x="106" y="268" text-anchor="end" fill="var(--muted)" font-size="9">ltv_dates</text>
+      <rect x="110" y="256" width="56" height="16" rx="3" fill="#fbbf24" opacity=".6"/>
+      <text x="171" y="268" fill="var(--muted)" font-size="9">38</text>
+      <!-- Legend -->
+      <rect x="110" y="285" width="9" height="9" rx="2" fill="#f87171"/><text x="122" y="293" fill="var(--muted)" font-size="9">High</text>
+      <rect x="158" y="285" width="9" height="9" rx="2" fill="#fbbf24"/><text x="170" y="293" fill="var(--muted)" font-size="9">Medium</text>
+      <rect x="216" y="285" width="9" height="9" rx="2" fill="#34d399"/><text x="228" y="293" fill="var(--muted)" font-size="9">Low / Migrated</text>
+    </svg>
+  </div>
+</div>
+
+<!-- Category status stacked bar -->
+<div class="card" style="margin-bottom:16px">
+  <div class="card-title">Migration Status by Category</div>
+  <div class="card-desc">Model count per functional area — green segment = already migrated</div>
+  <svg viewBox="0 0 720 140" class="chart-svg" style="height:140px">
+    <!-- grid lines -->
+    <line x1="60" y1="0" x2="60" y2="90" stroke="var(--border)" stroke-width="1"/>
+    <line x1="60" y1="90" x2="720" y2="90" stroke="var(--border)" stroke-width="1"/>
+    <!-- each category bar width = 68px, gap=12, start x=64 -->
+    <!-- JSON/Semi-struct: total=2, migrated=1 -->
+    <rect x="64"  y="45" width="48" height="45" rx="3" fill="var(--surface2)"/>
+    <rect x="64"  y="67" width="48" height="23" rx="3" fill="#34d399" opacity=".8"/>
+    <text x="88"  y="105" text-anchor="middle" fill="var(--muted)" font-size="8" transform="rotate(-20,88,105)">JSON</text>
+    <!-- Array/Struct: 2, 0 -->
+    <rect x="144" y="45" width="48" height="45" rx="3" fill="var(--surface2)"/>
+    <text x="168" y="105" text-anchor="middle" fill="var(--muted)" font-size="8" transform="rotate(-20,168,105)">Array/Struct</text>
+    <!-- Date: 1, 0 -->
+    <rect x="224" y="67" width="48" height="23" rx="3" fill="var(--surface2)"/>
+    <text x="248" y="105" text-anchor="middle" fill="var(--muted)" font-size="8" transform="rotate(-20,248,105)">Date</text>
+    <!-- Window: 1, 0 -->
+    <rect x="304" y="67" width="48" height="23" rx="3" fill="var(--surface2)"/>
+    <text x="328" y="105" text-anchor="middle" fill="var(--muted)" font-size="8" transform="rotate(-20,328,105)">Window</text>
+    <!-- Aggregation: 2, 0 -->
+    <rect x="384" y="45" width="48" height="45" rx="3" fill="var(--surface2)"/>
+    <text x="408" y="105" text-anchor="middle" fill="var(--muted)" font-size="8" transform="rotate(-20,408,105)">Aggregation</text>
+    <!-- Type cast: 1, 0 -->
+    <rect x="464" y="67" width="48" height="23" rx="3" fill="var(--surface2)"/>
+    <text x="488" y="105" text-anchor="middle" fill="var(--muted)" font-size="8" transform="rotate(-20,488,105)">Type Cast</text>
+    <!-- Pivot: 1, 0 -->
+    <rect x="544" y="67" width="48" height="23" rx="3" fill="var(--surface2)"/>
+    <text x="568" y="105" text-anchor="middle" fill="var(--muted)" font-size="8" transform="rotate(-20,568,105)">Pivot</text>
+    <!-- Delta: 1, 1 migrated -->
+    <rect x="624" y="67" width="48" height="23" rx="3" fill="var(--surface2)"/>
+    <rect x="624" y="67" width="48" height="23" rx="3" fill="#34d399" opacity=".8"/>
+    <text x="648" y="105" text-anchor="middle" fill="var(--muted)" font-size="8" transform="rotate(-20,648,105)">Delta Lake</text>
+    <!-- y axis labels -->
+    <text x="56" y="93"  text-anchor="end" fill="var(--muted)" font-size="9">0</text>
+    <text x="56" y="70"  text-anchor="end" fill="var(--muted)" font-size="9">1</text>
+    <text x="56" y="48"  text-anchor="end" fill="var(--muted)" font-size="9">2</text>
+    <!-- legend -->
+    <rect x="64" y="124" width="9" height="9" rx="2" fill="var(--surface2)" stroke="var(--border)" stroke-width="1"/>
+    <text x="76" y="132" fill="var(--muted)" font-size="9">Pending</text>
+    <rect x="120" y="124" width="9" height="9" rx="2" fill="#34d399" opacity=".8"/>
+    <text x="132" y="132" fill="var(--muted)" font-size="9">Migrated</text>
+  </svg>
+</div>
+
+</div><!-- /tab-overview -->
+
+<!-- ═══════════════ MODELS ═══════════════ -->
+<div id="tab-models" style="display:none">
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title" style="margin-bottom:16px">All 10 Models — Migration Registry</div>
+    <div class="scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>#</th><th>Model Name</th><th>Category</th><th>Status</th><th>Complexity</th>
+            <th>Lines</th><th>CTEs</th><th>Joins</th><th>Key Functions</th><th>Effort</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="hl">
+            <td style="color:var(--muted)">8</td>
+            <td><code style="font-size:11px;color:var(--green);font-weight:700">order_metadata_json</code></td>
+            <td><span style="font-size:11px;color:var(--muted)">JSON / Semi-struct</span></td>
+            <td><span class="badge b-migrated">✓ Migrated</span></td>
+            <td><span class="cpx cpx-h">▲ High</span></td>
+            <td>81</td><td>4</td><td>1</td>
+            <td><span class="fn-pill ok">to_json→OBJECT_CONSTRUCT</span> <span class="fn-pill ok">get_json_object→PARSE_JSON</span> <span class="fn-pill ok">from_json→VARIANT</span> <span class="fn-pill ok">json_tuple→split cols</span></td>
+            <td style="color:var(--green);font-weight:700">3h ✓</td>
+          </tr>
+          <tr>
+            <td style="color:var(--muted)">1</td>
+            <td><code style="font-size:11px">customer_lifetime_dates</code></td>
+            <td><span style="font-size:11px;color:var(--muted)">Date &amp; Time</span></td>
+            <td><span class="badge b-pending">⧖ Pending</span></td>
+            <td><span class="cpx cpx-m">● Medium</span></td>
+            <td>38</td><td>2</td><td>0</td>
+            <td><span class="fn-pill mod">date_add</span> <span class="fn-pill mod">datediff(arg order)</span> <span class="fn-pill mod">date_format</span> <span class="fn-pill mod">dayofweek</span> <span class="fn-pill mod">last_day</span></td>
+            <td style="color:var(--muted)">2h</td>
+          </tr>
+          <tr>
+            <td style="color:var(--muted)">2</td>
+            <td><code style="font-size:11px">customer_name_processing</code></td>
+            <td><span style="font-size:11px;color:var(--muted)">String Processing</span></td>
+            <td><span class="badge b-pending">⧖ Pending</span></td>
+            <td><span class="cpx cpx-l">▼ Low</span></td>
+            <td>48</td><td>2</td><td>0</td>
+            <td><span class="fn-pill">concat_ws</span> <span class="fn-pill mod">regexp_extract</span> <span class="fn-pill">split</span> <span class="fn-pill">lpad</span> <span class="fn-pill">reverse</span></td>
+            <td style="color:var(--muted)">1h</td>
+          </tr>
+          <tr>
+            <td style="color:var(--muted)">3</td>
+            <td><code style="font-size:11px">order_array_analysis</code></td>
+            <td><span style="font-size:11px;color:var(--muted)">Array / Semi-struct</span></td>
+            <td><span class="badge b-pending">⧖ Pending</span></td>
+            <td><span class="cpx cpx-h">▲ High</span></td>
+            <td>61</td><td>3</td><td>1</td>
+            <td><span class="fn-pill mod">collect_list→ARRAY_AGG</span> <span class="fn-pill mod">collect_set→ARRAY_UNIQUE_AGG</span> <span class="fn-pill mod">array_contains(args swapped!)</span></td>
+            <td style="color:var(--muted)">4h</td>
+          </tr>
+          <tr>
+            <td style="color:var(--muted)">4</td>
+            <td><code style="font-size:11px">customer_order_ranking</code></td>
+            <td><span style="font-size:11px;color:var(--muted)">Window Functions</span></td>
+            <td><span class="badge b-pending">⧖ Pending</span></td>
+            <td><span class="cpx cpx-l">▼ Low</span></td>
+            <td>64</td><td>4</td><td>1</td>
+            <td><span class="fn-pill ok">ROW_NUMBER</span> <span class="fn-pill ok">RANK</span> <span class="fn-pill ok">LAG/LEAD</span> <span class="fn-pill ok">SUM OVER</span></td>
+            <td style="color:var(--muted)">0.5h</td>
+          </tr>
+          <tr>
+            <td style="color:var(--muted)">5</td>
+            <td><code style="font-size:11px">payment_type_casting</code></td>
+            <td><span style="font-size:11px;color:var(--muted)">Type Casting</span></td>
+            <td><span class="badge b-pending">⧖ Pending</span></td>
+            <td><span class="cpx cpx-l">▼ Low</span></td>
+            <td>68</td><td>3</td><td>1</td>
+            <td><span class="fn-pill ok">CAST</span> <span class="fn-pill ok">TRY_CAST</span> <span class="fn-pill ok">NVL</span> <span class="fn-pill mod">typeof→N/A</span></td>
+            <td style="color:var(--muted)">1h</td>
+          </tr>
+          <tr>
+            <td style="color:var(--muted)">6</td>
+            <td><code style="font-size:11px">payment_method_pivot</code></td>
+            <td><span style="font-size:11px;color:var(--muted)">Pivot / Aggregation</span></td>
+            <td><span class="badge b-pending">⧖ Pending</span></td>
+            <td><span class="cpx cpx-m">● Medium</span></td>
+            <td>63</td><td>3</td><td>1</td>
+            <td><span class="fn-pill ok">PIVOT (same syntax)</span> <span class="fn-pill mod">date_format→TO_VARCHAR</span></td>
+            <td style="color:var(--muted)">1.5h</td>
+          </tr>
+          <tr class="hl">
+            <td style="color:var(--muted)">7</td>
+            <td><code style="font-size:11px;color:var(--green);font-weight:700">customer_scd_tracking</code></td>
+            <td><span style="font-size:11px;color:var(--muted)">Delta Lake / Incremental</span></td>
+            <td><span class="badge b-migrated">✓ Migrated</span></td>
+            <td><span class="cpx cpx-h">▲ High</span></td>
+            <td>43</td><td>2</td><td>0</td>
+            <td><span class="fn-pill ok">monotonically_increasing_id→SEQ8()</span> <span class="fn-pill ok">HASH()</span> <span class="fn-pill ok">MD5()</span> <span class="fn-pill ok">SHA2()</span></td>
+            <td style="color:var(--green);font-weight:700">5h ✓</td>
+          </tr>
+          <tr>
+            <td style="color:var(--muted)">9</td>
+            <td><code style="font-size:11px">payment_aggregations</code></td>
+            <td><span style="font-size:11px;color:var(--muted)">Aggregation / Analytics</span></td>
+            <td><span class="badge b-pending">⧖ Pending</span></td>
+            <td><span class="cpx cpx-m">● Medium</span></td>
+            <td>76</td><td>2</td><td>1</td>
+            <td><span class="fn-pill mod">percentile_approx→PERCENTILE_CONT</span> <span class="fn-pill mod">FILTER→CASE WHEN</span> <span class="fn-pill mod">collect_list→ARRAY_AGG</span></td>
+            <td style="color:var(--muted)">3h</td>
+          </tr>
+          <tr>
+            <td style="color:var(--muted)">10</td>
+            <td><code style="font-size:11px">customer_lifetime_value</code></td>
+            <td><span style="font-size:11px;color:var(--muted)">Complex Analytics</span></td>
+            <td><span class="badge b-pending">⧖ Pending</span></td>
+            <td><span class="cpx cpx-h">▲ High</span></td>
+            <td>188</td><td>7</td><td>2</td>
+            <td><span class="fn-pill mod">collect_list/set</span> <span class="fn-pill mod">percentile_approx</span> <span class="fn-pill mod">FILTER clause</span> <span class="fn-pill mod">datediff order</span></td>
+            <td style="color:var(--muted)">6h</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Migrated model detail cards -->
+  <div class="card green-glow" style="margin-bottom:16px">
+    <div class="sec">Migrated Model 2 — customer_scd_tracking</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <code style="font-size:16px;font-weight:800;color:var(--green)">customer_scd_tracking</code>
+      <span class="badge b-migrated">✓ Migrated</span>
+      <span class="cpx cpx-h">▲ High Complexity</span>
+      <span style="font-size:12px;color:var(--muted)">Delta Lake / Incremental · 43 lines · 2 CTEs · incremental merge · 100 rows</span>
+    </div>
+    <div class="grid-2">
+      <div>
+        <div class="sec">Breaking Changes Applied</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;gap:8px;align-items:flex-start"><span style="color:var(--amber);font-size:14px">⚠</span><span style="font-size:12px"><strong style="color:var(--text)">monotonically_increasing_id() removed:</strong> Databricks generates a globally unique int64. Replaced with <code style="color:var(--green)">SEQ8()</code> — monotonic within session. Use <code style="color:var(--green)">UUID_STRING()</code> if cross-session global uniqueness is required.</span></div>
+          <div style="display:flex;gap:8px;align-items:flex-start"><span style="color:var(--green);font-size:14px">✓</span><span style="font-size:12px"><code style="color:var(--amber)">hash()</code>, <code style="color:var(--amber)">md5()</code>, <code style="color:var(--amber)">sha2()</code> — identical on both platforms. No changes required.</span></div>
+          <div style="display:flex;gap:8px;align-items:flex-start"><span style="color:var(--green);font-size:14px">✓</span><span style="font-size:12px"><code style="color:var(--amber)">current_timestamp()</code> — identical in Snowflake. No change required.</span></div>
+          <div style="display:flex;gap:8px;align-items:flex-start"><span style="color:var(--green);font-size:14px">✓</span><span style="font-size:12px">Delta Lake MERGE → Snowflake MERGE: <code style="color:var(--green)">incremental_strategy='merge'</code> is natively supported by the Snowflake dbt adapter. Config block unchanged.</span></div>
+          <div style="display:flex;gap:8px;align-items:flex-start"><span style="color:var(--green);font-size:14px">✓</span><span style="font-size:12px"><code style="color:var(--amber)">is_incremental()</code> macro — identical. Incremental WHERE filter preserved as-is.</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="sec">Function Mapping</div>
+        <table class="tbl" style="font-size:11px">
+          <thead><tr><th>Databricks</th><th>→ Snowflake</th></tr></thead>
+          <tbody>
+            <tr><td><code style="color:var(--amber)">monotonically_increasing_id()</code></td><td><code style="color:var(--green)">SEQ8()</code></td></tr>
+            <tr><td><code style="color:var(--amber)">hash(col1, col2)</code></td><td><code style="color:var(--green)">HASH(col1, col2)</code> ✓ identical</td></tr>
+            <tr><td><code style="color:var(--amber)">md5(concat(a, b))</code></td><td><code style="color:var(--green)">MD5(CONCAT(a, b))</code> ✓ identical</td></tr>
+            <tr><td><code style="color:var(--amber)">sha2(concat(a,b), 256)</code></td><td><code style="color:var(--green)">SHA2(CONCAT(a,b), 256)</code> ✓ identical</td></tr>
+            <tr><td><code style="color:var(--amber)">current_timestamp()</code></td><td><code style="color:var(--green)">CURRENT_TIMESTAMP()</code> ✓ identical</td></tr>
+            <tr><td><code style="color:var(--amber)">incremental_strategy='merge'</code></td><td><code style="color:var(--green)">incremental_strategy='merge'</code> ✓ identical</td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:12px;padding:10px 12px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.2);border-radius:8px;font-size:11px;color:var(--muted)">
+          <strong style="color:var(--green)">Build result:</strong> SUCCESS 100 rows in 4.81s<br/>
+          <strong style="color:var(--green)">Materialization:</strong> incremental (merge on customer_id)<br/>
+          <strong style="color:var(--green)">Lineage:</strong> 6 output columns traced to stg_customers
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card green-glow">
+    <div class="sec">Migrated Model 1 — order_metadata_json</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <code style="font-size:16px;font-weight:800;color:var(--green)">order_metadata_json</code>
+      <span class="badge b-migrated">✓ Migrated</span>
+      <span class="cpx cpx-h">▲ High Complexity</span>
+      <span style="font-size:12px;color:var(--muted)">JSON / Semi-structured · 81 lines · 4 CTEs · 1 join</span>
+    </div>
+    <div class="grid-2">
+      <div>
+        <div class="sec">Breaking Changes Applied</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;gap:8px;align-items:flex-start"><span style="color:var(--amber);font-size:14px">⚠</span><span style="font-size:12px"><strong style="color:var(--text)">struct literal removed:</strong> Databricks' <code style="color:var(--amber)">struct(col1, col2)</code> has no positional equivalent — requires named keys in <code style="color:var(--green)">OBJECT_CONSTRUCT</code></span></div>
+          <div style="display:flex;gap:8px;align-items:flex-start"><span style="color:var(--amber);font-size:14px">⚠</span><span style="font-size:12px"><strong style="color:var(--text)">from_json schema dropped:</strong> <code style="color:var(--amber)">from_json(col, 'struct&lt;...&gt;')</code> → Snowflake <code style="color:var(--green)">PARSE_JSON(col)</code> returns schemaless VARIANT; type must be cast on each access</span></div>
+          <div style="display:flex;gap:8px;align-items:flex-start"><span style="color:var(--amber);font-size:14px">⚠</span><span style="font-size:12px"><strong style="color:var(--text)">json_tuple multi-return removed:</strong> <code style="color:var(--amber)">json_tuple(col, 'k1', 'k2') AS (a, b)</code> is not supported — split into two separate column expressions</span></div>
+          <div style="display:flex;gap:8px;align-items:flex-start"><span style="color:var(--green);font-size:14px">✓</span><span style="font-size:12px"><code style="color:var(--amber)">CONCAT()</code>, <code style="color:var(--amber)">LEFT JOIN</code> — no changes required; identical in both dialects</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="sec">Function Mapping</div>
+        <table class="tbl" style="font-size:11px">
+          <thead><tr><th>Databricks</th><th>→ Snowflake</th></tr></thead>
+          <tbody>
+            <tr><td><code style="color:var(--amber)">to_json(struct(a,b))</code></td><td><code style="color:var(--green)">TO_VARCHAR(OBJECT_CONSTRUCT('a',a,'b',b))</code></td></tr>
+            <tr><td><code style="color:var(--amber)">to_json(named_struct('k',v))</code></td><td><code style="color:var(--green)">TO_VARCHAR(OBJECT_CONSTRUCT('k',v))</code></td></tr>
+            <tr><td><code style="color:var(--amber)">get_json_object(col,'$.k')</code></td><td><code style="color:var(--green)">PARSE_JSON(col):k::STRING</code></td></tr>
+            <tr><td><code style="color:var(--amber)">from_json(col,'struct&lt;...&gt;')</code></td><td><code style="color:var(--green)">PARSE_JSON(col) [→ VARIANT]</code></td></tr>
+            <tr><td><code style="color:var(--amber)">json_tuple(c,'k1','k2') AS (a,b)</code></td><td><code style="color:var(--green)">PARSE_JSON(c):k1::STRING, :k2::STRING</code></td></tr>
+            <tr><td><code style="color:var(--amber)">struct.field</code></td><td><code style="color:var(--green)">variant:field::STRING</code></td></tr>
+            <tr><td><code style="color:var(--amber)">struct.tags[0]</code></td><td><code style="color:var(--green)">variant:tags[0]::STRING</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div><!-- /tab-models -->
+
+<!-- ═══════════════ VALIDATION ═══════════════ -->
+<div id="tab-validation" style="display:none">
+
+  <div class="grid-12">
+    <div class="card">
+      <div class="card-title">Build Timeline</div>
+      <div class="card-desc">Sequential dbt build — order_metadata_json</div>
+      <div class="timeline">
+        <div class="tl-item"><div class="tl-dot pass"></div><div class="tl-info"><div class="tl-name">Seeds loaded</div><div class="tl-detail">raw_customers (100), raw_orders (99), raw_payments (113)</div></div><div class="tl-time">~8s</div></div>
+        <div class="tl-item"><div class="tl-dot pass"></div><div class="tl-info"><div class="tl-name">Staging views created</div><div class="tl-detail">stg_orders, stg_customers, stg_payments</div></div><div class="tl-time">~3s</div></div>
+        <div class="tl-item"><div class="tl-dot pass"></div><div class="tl-info"><div class="tl-name">Staging tests passed</div><div class="tl-detail">8 tests — unique, not_null, accepted_values</div></div><div class="tl-time">~3s</div></div>
+        <div class="tl-item"><div class="tl-dot pass"></div><div class="tl-info"><div class="tl-name" style="color:var(--green)">order_metadata_json built ✓</div><div class="tl-detail">Snowflake table created — 99 rows, JSON columns verified</div></div><div class="tl-time" style="color:var(--green);font-weight:700">5.72s</div></div>
+        <div class="tl-item"><div class="tl-dot pass"></div><div class="tl-info"><div class="tl-name">Mart models built</div><div class="tl-detail">customers, orders — both tables created</div></div><div class="tl-time">~4s</div></div>
+        <div class="tl-item"><div class="tl-dot pass"></div><div class="tl-info"><div class="tl-name">Mart tests passed</div><div class="tl-detail">12 tests — unique, not_null, relationships, accepted_values</div></div><div class="tl-time">~3s</div></div>
+        <div class="tl-item"><div class="tl-dot pass"></div><div class="tl-info"><div class="tl-name" style="color:var(--green);font-weight:700">Full build complete</div><div class="tl-detail">30/30 PASS · 0 WARN · 0 ERROR · 0 SKIP (includes customer_scd_tracking)</div></div><div class="tl-time" style="color:var(--green);font-weight:700">31.9s</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Validation Checklist — order_metadata_json</div>
+      <div class="card-desc">All 6 post-migration quality gates</div>
+      <table class="tbl">
+        <thead><tr><th>Gate</th><th>Result</th><th>Detail</th></tr></thead>
+        <tbody>
+          <tr><td style="font-weight:600">Compilation</td><td><span class="pass-badge">✓ PASS</span></td><td style="color:var(--muted);font-size:11px">No Jinja / syntax errors — compiled cleanly</td></tr>
+          <tr><td style="font-weight:600">SQL Analysis</td><td><span class="pass-badge">✓ PASS</span></td><td style="color:var(--muted);font-size:11px">0 anti-patterns detected via sql_analyze</td></tr>
+          <tr><td style="font-weight:600">Snowflake Build</td><td><span class="pass-badge">✓ PASS</span></td><td style="color:var(--muted);font-size:11px">SUCCESS 1 in 5.72s → anas.js_dbt.order_metadata_json</td></tr>
+          <tr><td style="font-weight:600">Full Project Build</td><td><span class="pass-badge">✓ PASS</span></td><td style="color:var(--muted);font-size:11px">29/29 PASS — zero regressions across all models</td></tr>
+          <tr><td style="font-weight:600">Data Sample</td><td><span class="pass-badge">✓ PASS</span></td><td style="color:var(--muted);font-size:11px">dbt show previewed 3 rows — JSON columns correctly populated</td></tr>
+          <tr><td style="font-weight:600">Column Lineage</td><td><span class="pass-badge">✓ PASS</span></td><td style="color:var(--muted);font-size:11px">17 output columns fully traced to stg_orders &amp; stg_customers</td></tr>
+        </tbody>
+      </table>
+
+      <div class="info-box" style="margin-top:16px">
+        <div style="font-weight:700;color:var(--green);margin-bottom:6px">✅ Migration Complete</div>
+        Table deployed to <strong>anas.js_dbt.order_metadata_json</strong><br/>
+        Full project build: <strong>29/29 PASS</strong> — no regressions<br/>
+        Column lineage: <strong>17 output columns</strong> traced to stg_orders &amp; stg_customers<br/>
+        Build time: <strong>5.72s</strong> on Snowflake sa_wh (XSMALL)
+      </div>
+    </div>
+  </div>
+
+  <!-- Lineage diagram -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">Column-Level Lineage</div>
+    <div class="card-desc">How source columns flow through order_metadata_json to 17 output columns</div>
+    <div class="lineage-wrap">
+      <div>
+        <div class="ln-lbl" style="color:var(--blue)">⬡ stg_orders</div>
+        <div class="ln-node src"><code style="color:var(--blue)">order_id</code></div>
+        <div class="ln-node src"><code style="color:var(--blue)">customer_id</code></div>
+        <div class="ln-node src"><code style="color:var(--blue)">order_date</code></div>
+        <div class="ln-node src"><code style="color:var(--blue)">status</code></div>
+        <div class="ln-lbl" style="color:var(--cyan);margin-top:10px">⬡ stg_customers</div>
+        <div class="ln-node" style="border-color:rgba(34,211,238,.4)"><code style="color:var(--cyan)">customer_id</code></div>
+        <div class="ln-node" style="border-color:rgba(34,211,238,.4)"><code style="color:var(--cyan)">first_name</code></div>
+        <div class="ln-node" style="border-color:rgba(34,211,238,.4)"><code style="color:var(--cyan)">last_name</code></div>
+      </div>
+      <div class="ln-arr">→</div>
+      <div>
+        <div class="ln-lbl" style="color:var(--green)">⬡ order_metadata_json</div>
+        <div class="ln-node mdl" style="padding:12px">
+          <div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:6px">Snowflake Transformations</div>
+          <div style="font-size:10px;color:var(--muted);line-height:1.9">
+            <span style="color:var(--green)">OBJECT_CONSTRUCT</span> → build JSON object<br/>
+            <span style="color:var(--green)">TO_VARCHAR</span> → serialize to string<br/>
+            <span style="color:var(--green)">CONCAT</span> → build sample JSON<br/>
+            <span style="color:var(--green)">PARSE_JSON</span> → parse → VARIANT<br/>
+            <span style="color:var(--green)">:key::STRING</span> → extract field<br/>
+            <span style="color:var(--green)">:tags[0]::STRING</span> → array access<br/>
+            <span style="color:var(--green)">LEFT JOIN</span> → enrich with names
+          </div>
+        </div>
+      </div>
+      <div class="ln-arr">→</div>
+      <div>
+        <div class="ln-lbl" style="color:var(--purple)">17 Output Columns</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">order_id</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">customer_id</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">order_date</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">status</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">order_metadata_json</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">full_order_json</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">sample_json</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">json_status</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">json_priority</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">parsed_variant</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">tuple_status</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">tuple_priority</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">first_name</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">last_name</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">struct_status</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">struct_priority</code></div>
+          <div class="ln-node out"><code style="color:var(--purple);font-size:9px">first_tag</code></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- customer_scd_tracking validation -->
+  <div class="card" style="margin-bottom:16px;border-color:rgba(52,211,153,.25)">
+    <div class="card-title">Validation — <code style="color:var(--green)">customer_scd_tracking</code></div>
+    <div class="card-desc">Incremental merge model · Delta Lake → Snowflake · March 26, 2026</div>
+    <div class="grid-2">
+      <div>
+        <table class="tbl">
+          <thead><tr><th>Gate</th><th>Result</th><th>Detail</th></tr></thead>
+          <tbody>
+            <tr><td style="font-weight:600">Compilation</td><td><span class="pass-badge">✓ PASS</span></td><td style="color:var(--muted);font-size:11px">Jinja + incremental macro compiled cleanly</td></tr>
+            <tr><td style="font-weight:600">SQL Analysis</td><td><span class="pass-badge">✓ PASS</span></td><td style="color:var(--muted);font-size:11px">0 anti-patterns — only cosmetic lint warnings</td></tr>
+            <tr><td style="font-weight:600">Snowflake Build</td><td><span class="pass-badge">✓ PASS</span></td><td style="color:var(--muted);font-size:11px">SUCCESS 100 rows in 4.81s (incremental)</td></tr>
+            <tr><td style="font-weight:600">Full Project Build</td><td><span class="pass-badge">✓ PASS</span></td><td style="color:var(--muted);font-size:11px">30/30 PASS — zero regressions</td></tr>
+            <tr><td style="font-weight:600">Data Sample</td><td><span class="pass-badge">✓ PASS</span></td><td style="color:var(--muted);font-size:11px">5 rows verified — hash/md5/sha256 columns populated</td></tr>
+            <tr><td style="font-weight:600">Column Lineage</td><td><span class="pass-badge">✓ PASS</span></td><td style="color:var(--muted);font-size:11px">6 output columns traced to stg_customers</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <div class="sec" style="margin-bottom:10px">Live Data Sample — <code style="color:var(--green)">dbt show --limit 5</code></div>
+        <div class="scroll">
+          <table class="tbl" style="font-size:11px">
+            <thead><tr><th>CUSTOMER_ID</th><th>FIRST_NAME</th><th>LAST_NAME</th><th>LAST_UPDATED_AT</th><th>CHANGE_ID</th><th>CUSTOMER_HASH</th><th>CUSTOMER_MD5</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>Michael</td><td>P.</td><td style="color:var(--muted)">2026-03-25 13:13:…</td><td>0</td><td><code style="color:var(--cyan)">4356672075219640767</code></td><td><code style="color:var(--cyan)">…</code></td></tr>
+              <tr><td>2</td><td>Shawn</td><td>M.</td><td style="color:var(--muted)">2026-03-25 13:13:…</td><td>1</td><td><code style="color:var(--cyan)">3174450932988374534</code></td><td><code style="color:var(--cyan)">…</code></td></tr>
+              <tr><td>3</td><td>Kathleen</td><td>P.</td><td style="color:var(--muted)">2026-03-25 13:13:…</td><td>2</td><td><code style="color:var(--cyan)">7341535977534915633</code></td><td><code style="color:var(--cyan)">…</code></td></tr>
+              <tr><td>4</td><td>Jimmy</td><td>C.</td><td style="color:var(--muted)">2026-03-25 13:13:…</td><td>3</td><td><code style="color:var(--cyan)">-3738825461156053330</code></td><td><code style="color:var(--cyan)">…</code></td></tr>
+              <tr><td>5</td><td>Katherine</td><td>R.</td><td style="color:var(--muted)">2026-03-25 13:13:…</td><td>4</td><td><code style="color:var(--cyan)">4425877858869602439</code></td><td><code style="color:var(--cyan)">…</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:10px;padding:10px 12px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.2);border-radius:8px;font-size:11px;color:var(--muted)">
+          <strong style="color:var(--green)">✓ SEQ8() working:</strong> change_id is 0,1,2,3,4… (monotonic)<br/>
+          <strong style="color:var(--green)">✓ HASH() working:</strong> deterministic numeric hashes generated<br/>
+          <strong style="color:var(--green)">✓ Incremental merge:</strong> next run will only process new/changed rows
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- dbt show sample for order_metadata_json -->
+  <div class="card">
+    <div class="card-title">Live Data Sample — <code style="color:var(--green)">order_metadata_json · dbt show --limit 3</code></div>
+    <div class="card-desc">Actual output from Snowflake confirming JSON columns are correctly populated</div>
+    <div class="scroll">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>ORDER_ID</th><th>CUSTOMER_ID</th><th>ORDER_DATE</th><th>STATUS</th>
+            <th>ORDER_METADATA_JSON</th><th>FULL_ORDER_JSON</th>
+            <th>JSON_STATUS</th><th>JSON_PRIORITY</th><th>STRUCT_STATUS</th><th>FIRST_TAG</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td><td>1</td><td>2018-01-01</td><td>returned</td>
+            <td><code style="color:var(--green)">{"order_date":"2018-01-01","status":"returned"}</code></td>
+            <td><code style="color:var(--green)">{"date":"2018-01-01","order_id":1,"status":"returned"}</code></td>
+            <td><code>returned</code></td><td><code>high</code></td><td><code>returned</code></td><td><code>online</code></td>
+          </tr>
+          <tr>
+            <td>2</td><td>3</td><td>2018-01-02</td><td>completed</td>
+            <td><code style="color:var(--green)">{"order_date":"2018-01-02","status":"completed"}</code></td>
+            <td><code style="color:var(--green)">{"date":"2018-01-02","order_id":2,"status":"completed"}</code></td>
+            <td><code>completed</code></td><td><code>high</code></td><td><code>completed</code></td><td><code>online</code></td>
+          </tr>
+          <tr>
+            <td>4</td><td>50</td><td>2018-01-05</td><td>completed</td>
+            <td><code style="color:var(--green)">{"order_date":"2018-01-05","status":"completed"}</code></td>
+            <td><code style="color:var(--green)">{"date":"2018-01-05","order_id":4,"status":"completed"}</code></td>
+            <td><code>completed</code></td><td><code>high</code></td><td><code>completed</code></td><td><code>online</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /tab-validation -->
+
+<!-- ═══════════════ FUNCTIONS ═══════════════ -->
+<div id="tab-functions" style="display:none">
+
+  <div class="grid-2" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-title">Risk Distribution — 18 Functions</div>
+      <div class="card-desc">Migration complexity of all identified Databricks functions</div>
+      <!-- Horizontal stacked bar -->
+      <svg viewBox="0 0 400 80" class="chart-svg" style="height:80px;margin:8px 0">
+        <!-- Total: 18. High=7, Medium=7, Low=4 -->
+        <!-- High: 7/18 = 38.9% → 155px -->
+        <rect x="0" y="20" width="155" height="30" rx="0" fill="#f87171" opacity=".85"/>
+        <!-- Medium: 7/18 = 38.9% → 155px -->
+        <rect x="155" y="20" width="156" height="30" fill="#fbbf24" opacity=".85"/>
+        <!-- Low: 4/18 = 22.2% → 89px -->
+        <rect x="311" y="20" width="89" height="30" rx="0" fill="#34d399" opacity=".85"/>
+        <!-- Round end caps -->
+        <rect x="0" y="20" width="8" height="30" rx="4" fill="#f87171" opacity=".85"/>
+        <rect x="392" y="20" width="8" height="30" rx="4" fill="#34d399" opacity=".85"/>
+        <!-- Labels inside -->
+        <text x="77" y="40" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">7 HIGH</text>
+        <text x="233" y="40" text-anchor="middle" fill="#000" font-size="11" font-weight="700" opacity=".8">7 MEDIUM</text>
+        <text x="355" y="40" text-anchor="middle" fill="#000" font-size="11" font-weight="700" opacity=".8">4 LOW</text>
+      </svg>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="color:var(--red)">High Risk</span><span style="color:var(--muted)">7 / 18 functions</span></div>
+          <div class="prog-wrap"><div class="prog" style="width:38.9%;background:var(--red)"></div></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="color:var(--amber)">Medium Risk</span><span style="color:var(--muted)">7 / 18 functions</span></div>
+          <div class="prog-wrap"><div class="prog" style="width:38.9%;background:var(--amber)"></div></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="color:var(--green)">Low Risk</span><span style="color:var(--muted)">4 / 18 functions</span></div>
+          <div class="prog-wrap"><div class="prog" style="width:22.2%;background:var(--green)"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">⚠ Critical Migration Gotchas</div>
+      <div class="card-desc">These 4 issues cause silent data errors — review carefully</div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.2);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:4px">🔴 array_contains — ARGUMENT ORDER REVERSED</div>
+          <div style="font-size:11px;color:var(--muted)">Databricks: <code style="color:var(--amber)">array_contains(array, value)</code><br/>Snowflake: <code style="color:var(--green)">ARRAY_CONTAINS(value, array)</code> ← args swapped!</div>
+        </div>
+        <div style="background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.2);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:4px">🔴 dayofweek — OFFSET DIFFERENCE</div>
+          <div style="font-size:11px;color:var(--muted)">Databricks: <code style="color:var(--amber)">dayofweek()</code> → 1=Sunday<br/>Snowflake: <code style="color:var(--green)">DAYOFWEEK()</code> → 0=Sunday · fix: <code style="color:var(--green)">DAYOFWEEK()+1</code></div>
+        </div>
+        <div style="background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.2);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:700;color:var(--amber);margin-bottom:4px">🟡 datediff — ARG ORDER DIFFERENT</div>
+          <div style="font-size:11px;color:var(--muted)">Databricks: <code style="color:var(--amber)">datediff(day, start, end)</code><br/>Snowflake: <code style="color:var(--green)">DATEDIFF('day', start, end)</code> — same order but date_part must be quoted</div>
+        </div>
+        <div style="background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.2);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:700;color:var(--amber);margin-bottom:4px">🟡 FILTER clause — NOT NATIVELY SUPPORTED</div>
+          <div style="font-size:11px;color:var(--muted)">Databricks: <code style="color:var(--amber)">COUNT(*) FILTER (WHERE amount &gt; 50)</code><br/>Snowflake: <code style="color:var(--green)">SUM(CASE WHEN amount &gt; 50 THEN 1 ELSE 0 END)</code></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Full function reference table -->
+  <div class="card">
+    <div class="card-title">Complete Function Reference — All 18 Databricks Functions</div>
+    <div class="card-desc">Every Databricks function identified across the 10 models, with Snowflake equivalents, risk level, and affected models</div>
+    <div class="scroll">
+      <table class="tbl">
+        <thead>
+          <tr><th>Function</th><th>Category</th><th>Databricks</th><th>Snowflake</th><th>Risk</th><th>Affected Models</th></tr>
+        </thead>
+        <tbody>
+          <tr class="hl"><td><strong>to_json(struct/named_struct)</strong></td><td>JSON</td><td><code style="color:var(--amber)">to_json(struct(a,b))</code></td><td><code style="color:var(--green)">TO_VARCHAR(OBJECT_CONSTRUCT('a',a,'b',b))</code></td><td><span class="risk-h">HIGH</span></td><td><code style="color:var(--green);font-size:10px">order_metadata_json ✓</code></td></tr>
+          <tr class="hl"><td><strong>get_json_object</strong></td><td>JSON</td><td><code style="color:var(--amber)">get_json_object(col,'$.k')</code></td><td><code style="color:var(--green)">PARSE_JSON(col):k::STRING</code></td><td><span class="risk-m">MED</span></td><td><code style="color:var(--green);font-size:10px">order_metadata_json ✓</code></td></tr>
+          <tr class="hl"><td><strong>from_json</strong></td><td>JSON</td><td><code style="color:var(--amber)">from_json(col,'struct&lt;...&gt;')</code></td><td><code style="color:var(--green)">PARSE_JSON(col) [VARIANT]</code></td><td><span class="risk-h">HIGH</span></td><td><code style="color:var(--green);font-size:10px">order_metadata_json ✓</code></td></tr>
+          <tr class="hl"><td><strong>json_tuple</strong></td><td>JSON</td><td><code style="color:var(--amber)">json_tuple(c,'k1','k2') AS (a,b)</code></td><td><code style="color:var(--green)">Individual PARSE_JSON() columns</code></td><td><span class="risk-h">HIGH</span></td><td><code style="color:var(--green);font-size:10px">order_metadata_json ✓</code></td></tr>
+          <tr><td><strong>collect_list</strong></td><td>Array</td><td><code style="color:var(--amber)">collect_list(col)</code></td><td><code style="color:var(--green)">ARRAY_AGG(col)</code></td><td><span class="risk-m">MED</span></td><td><code style="font-size:10px">order_array_analysis, cust_ltv, pmt_agg</code></td></tr>
+          <tr><td><strong>collect_set</strong></td><td>Array</td><td><code style="color:var(--amber)">collect_set(col)</code></td><td><code style="color:var(--green)">ARRAY_UNIQUE_AGG(col)</code></td><td><span class="risk-m">MED</span></td><td><code style="font-size:10px">order_array_analysis, cust_ltv</code></td></tr>
+          <tr><td><strong>array_contains</strong></td><td>Array</td><td><code style="color:var(--amber)">array_contains(arr, val)</code></td><td><code style="color:var(--green)">ARRAY_CONTAINS(val, arr) ← SWAPPED</code></td><td><span class="risk-h">HIGH</span></td><td><code style="font-size:10px">order_array_analysis</code></td></tr>
+          <tr><td><strong>size()</strong></td><td>Array</td><td><code style="color:var(--amber)">size(arr)</code></td><td><code style="color:var(--green)">ARRAY_SIZE(arr)</code></td><td><span class="risk-l">LOW</span></td><td><code style="font-size:10px">order_array_analysis, cust_ltv</code></td></tr>
+          <tr><td><strong>array_join</strong></td><td>Array</td><td><code style="color:var(--amber)">array_join(arr, ',')</code></td><td><code style="color:var(--green)">ARRAY_TO_STRING(arr, ',')</code></td><td><span class="risk-l">LOW</span></td><td><code style="font-size:10px">order_array_analysis</code></td></tr>
+          <tr><td><strong>struct() constructor</strong></td><td>Struct</td><td><code style="color:var(--amber)">struct(col1, col2)</code></td><td><code style="color:var(--green)">OBJECT_CONSTRUCT('c1',c1,'c2',c2)</code></td><td><span class="risk-h">HIGH</span></td><td><code style="font-size:10px">order_array_analysis</code></td></tr>
+          <tr><td><strong>datediff (arg order)</strong></td><td>Date</td><td><code style="color:var(--amber)">datediff(day, start, end)</code></td><td><code style="color:var(--green)">DATEDIFF('day', start, end)</code></td><td><span class="risk-m">MED</span></td><td><code style="font-size:10px">cust_ltv_dates, cust_ltv</code></td></tr>
+          <tr><td><strong>date_format</strong></td><td>Date</td><td><code style="color:var(--amber)">date_format(col,'yyyy-MM')</code></td><td><code style="color:var(--green)">TO_VARCHAR(col,'YYYY-MM')</code></td><td><span class="risk-l">LOW</span></td><td><code style="font-size:10px">cust_ltv_dates, pmt_pivot</code></td></tr>
+          <tr><td><strong>dayofweek offset</strong></td><td>Date</td><td><code style="color:var(--amber)">dayofweek() → 1=Sun</code></td><td><code style="color:var(--green)">DAYOFWEEK() → 0=Sun (add +1)</code></td><td><span class="risk-h">HIGH</span></td><td><code style="font-size:10px">cust_ltv_dates</code></td></tr>
+          <tr><td><strong>date_add</strong></td><td>Date</td><td><code style="color:var(--amber)">date_add(col, 30)</code></td><td><code style="color:var(--green)">DATEADD(day, 30, col)</code></td><td><span class="risk-m">MED</span></td><td><code style="font-size:10px">cust_ltv_dates</code></td></tr>
+          <tr><td><strong>percentile_approx</strong></td><td>Aggregation</td><td><code style="color:var(--amber)">percentile_approx(col, 0.5)</code></td><td><code style="color:var(--green)">PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY col)</code></td><td><span class="risk-m">MED</span></td><td><code style="font-size:10px">pmt_agg, cust_ltv</code></td></tr>
+          <tr><td><strong>FILTER clause</strong></td><td>Aggregation</td><td><code style="color:var(--amber)">COUNT(*) FILTER (WHERE ...)</code></td><td><code style="color:var(--green)">SUM(CASE WHEN ... THEN 1 ELSE 0 END)</code></td><td><span class="risk-m">MED</span></td><td><code style="font-size:10px">pmt_agg, cust_ltv</code></td></tr>
+          <tr><td><strong>monotonically_increasing_id</strong></td><td>Delta Lake</td><td><code style="color:var(--amber)">monotonically_increasing_id()</code></td><td><code style="color:var(--green)">SEQ8() or UUID_STRING()</code></td><td><span class="risk-h">HIGH</span></td><td><code style="font-size:10px">cust_scd_tracking</code></td></tr>
+          <tr><td><strong>typeof</strong></td><td>Type</td><td><code style="color:var(--amber)">typeof(col)</code></td><td><code style="color:var(--green)">Not available — remove or use TYPEOF variant</code></td><td><span class="risk-m">MED</span></td><td><code style="font-size:10px">pmt_type_casting</code></td></tr>
+          <tr><td><strong>regexp_extract</strong></td><td>String</td><td><code style="color:var(--amber)">regexp_extract(col, pattern, 0)</code></td><td><code style="color:var(--green)">REGEXP_SUBSTR(col, pattern)</code></td><td><span class="risk-l">LOW</span></td><td><code style="font-size:10px">cust_name_processing</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /tab-functions -->
+
+</div><!-- /wrap -->
+
+<script>
+// ── Tab switching ─────────────────────────────────────────────────────────
+document.getElementById('tabs').addEventListener('click', function(e) {
+  const btn = e.target.closest('.tab');
+  if (!btn) return;
+  const target = btn.dataset.tab;
+  // update tab buttons
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+  btn.classList.add('on');
+  // show/hide panels
+  ['overview','models','validation','functions'].forEach(id => {
+    document.getElementById('tab-' + id).style.display = id === target ? '' : 'none';
+  });
+});
+</script>
+</body>
+</html>
