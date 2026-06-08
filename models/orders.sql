@@ -36,14 +36,13 @@ final as (
         orders.customer_id,
         orders.order_date,
         orders.status,
+        order_payments.total_amount as amount,
 
         {% for payment_method in payment_methods -%}
 
-        order_payments.{{ payment_method }}_amount,
+        order_payments.{{ payment_method }}_amount{{ "," if not loop.last }}
 
         {% endfor -%}
-
-        order_payments.total_amount as amount
 
     from orders
 

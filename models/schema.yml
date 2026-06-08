@@ -26,8 +26,16 @@ models:
       - name: number_of_orders
         description: Count of the number of orders a customer has placed
 
-      - name: total_order_amount
+      - name: customer_lifetime_value
         description: Total value (AUD) of a customer's orders
+
+      - name: customer_segment
+        description: Customer segment based on order count. VIP customers have 10 or more orders, Regular customers have 5 to 9 orders, and Occasional customers have 1 to 4 orders.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['VIP', 'Regular', 'Occasional']
 
   - name: orders
     description: This table has basic information about orders, as well as some derived facts based on payments
@@ -44,8 +52,9 @@ models:
         tests:
           - not_null
           - relationships:
-              to: ref('customers')
-              field: customer_id
+              arguments:
+                to: ref('customers')
+                field: customer_id
 
       - name: order_date
         description: Date (UTC) that the order was placed
@@ -54,7 +63,8 @@ models:
         description: '{{ doc("orders_status") }}'
         tests:
           - accepted_values:
-              values: ['placed', 'shipped', 'completed', 'return_pending', 'returned']
+              arguments:
+                values: ['placed', 'shipped', 'completed', 'return_pending', 'returned']
 
       - name: amount
         description: Total amount (AUD) of the order
@@ -80,3 +90,57 @@ models:
         description: Amount of the order (AUD) paid for by gift card
         tests:
           - not_null
+
+unit_tests:
+  - name: test_customers_customer_segment_boundaries
+    description: Validates customer segment logic for VIP, Regular, Occasional, and customers with no orders.
+    model: customers
+    given:
+      - input: ref('stg_customers')
+        rows:
+          - {customer_id: 1, first_name: Alice, last_name: Vip}
+          - {customer_id: 2, first_name: Bob, last_name: Regular}
+          - {customer_id: 3, first_name: Cara, last_name: Occasional}
+          - {customer_id: 4, first_name: Dan, last_name: NoOrders}
+      - input: ref('stg_orders')
+        rows:
+          - {order_id: 101, customer_id: 1, order_date: '2024-01-01', status: completed}
+          - {order_id: 102, customer_id: 1, order_date: '2024-01-02', status: completed}
+          - {order_id: 103, customer_id: 1, order_date: '2024-01-03', status: completed}
+          - {order_id: 104, customer_id: 1, order_date: '2024-01-04', status: completed}
+          - {order_id: 105, customer_id: 1, order_date: '2024-01-05', status: completed}
+          - {order_id: 106, customer_id: 1, order_date: '2024-01-06', status: completed}
+          - {order_id: 107, customer_id: 1, order_date: '2024-01-07', status: completed}
+          - {order_id: 108, customer_id: 1, order_date: '2024-01-08', status: completed}
+          - {order_id: 109, customer_id: 1, order_date: '2024-01-09', status: completed}
+          - {order_id: 110, customer_id: 1, order_date: '2024-01-10', status: completed}
+          - {order_id: 201, customer_id: 2, order_date: '2024-02-01', status: completed}
+          - {order_id: 202, customer_id: 2, order_date: '2024-02-02', status: completed}
+          - {order_id: 203, customer_id: 2, order_date: '2024-02-03', status: completed}
+          - {order_id: 204, customer_id: 2, order_date: '2024-02-04', status: completed}
+          - {order_id: 205, customer_id: 2, order_date: '2024-02-05', status: completed}
+          - {order_id: 301, customer_id: 3, order_date: '2024-03-01', status: completed}
+      - input: ref('stg_payments')
+        rows:
+          - {payment_id: 1001, order_id: 101, payment_method: credit_card, amount: 10}
+          - {payment_id: 1002, order_id: 102, payment_method: credit_card, amount: 10}
+          - {payment_id: 1003, order_id: 103, payment_method: credit_card, amount: 10}
+          - {payment_id: 1004, order_id: 104, payment_method: credit_card, amount: 10}
+          - {payment_id: 1005, order_id: 105, payment_method: credit_card, amount: 10}
+          - {payment_id: 1006, order_id: 106, payment_method: credit_card, amount: 10}
+          - {payment_id: 1007, order_id: 107, payment_method: credit_card, amount: 10}
+          - {payment_id: 1008, order_id: 108, payment_method: credit_card, amount: 10}
+          - {payment_id: 1009, order_id: 109, payment_method: credit_card, amount: 10}
+          - {payment_id: 1010, order_id: 110, payment_method: credit_card, amount: 10}
+          - {payment_id: 2001, order_id: 201, payment_method: credit_card, amount: 20}
+          - {payment_id: 2002, order_id: 202, payment_method: credit_card, amount: 20}
+          - {payment_id: 2003, order_id: 203, payment_method: credit_card, amount: 20}
+          - {payment_id: 2004, order_id: 204, payment_method: credit_card, amount: 20}
+          - {payment_id: 2005, order_id: 205, payment_method: credit_card, amount: 20}
+          - {payment_id: 3001, order_id: 301, payment_method: credit_card, amount: 30}
+    expect:
+      rows:
+        - {customer_id: 1, first_name: Alice, last_name: Vip, first_order: '2024-01-01', most_recent_order: '2024-01-10', number_of_orders: 10, customer_lifetime_value: 100, customer_segment: VIP}
+        - {customer_id: 2, first_name: Bob, last_name: Regular, first_order: '2024-02-01', most_recent_order: '2024-02-05', number_of_orders: 5, customer_lifetime_value: 100, customer_segment: Regular}
+        - {customer_id: 3, first_name: Cara, last_name: Occasional, first_order: '2024-03-01', most_recent_order: '2024-03-01', number_of_orders: 1, customer_lifetime_value: 30, customer_segment: Occasional}
+        - {customer_id: 4, first_name: Dan, last_name: NoOrders, first_order: null, most_recent_order: null, number_of_orders: null, customer_lifetime_value: null, customer_segment: Occasional}
