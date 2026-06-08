@@ -26,8 +26,21 @@ models:
       - name: number_of_orders
         description: Count of the number of orders a customer has placed
 
-      - name: total_order_amount
+      - name: customer_lifetime_value
         description: Total value (AUD) of a customer's orders
+
+      - name: days_since_last_order
+        description: Number of days between a customer's most recent order and the current date. Null for customers with no orders.
+
+      - name: customer_lifetime_days
+        description: Number of days between a customer's first and most recent order. Returns 0 for customers with one order and null for customers with no orders.
+
+      - name: customer_segment
+        description: Customer value segment based on lifetime order value
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['high_value', 'medium_value', 'low_value']
 
   - name: orders
     description: This table has basic information about orders, as well as some derived facts based on payments
@@ -44,8 +57,9 @@ models:
         tests:
           - not_null
           - relationships:
-              to: ref('customers')
-              field: customer_id
+              arguments:
+                to: ref('customers')
+                field: customer_id
 
       - name: order_date
         description: Date (UTC) that the order was placed
@@ -54,7 +68,8 @@ models:
         description: '{{ doc("orders_status") }}'
         tests:
           - accepted_values:
-              values: ['placed', 'shipped', 'completed', 'return_pending', 'returned']
+              arguments:
+                values: ['placed', 'shipped', 'completed', 'return_pending', 'returned']
 
       - name: amount
         description: Total amount (AUD) of the order
