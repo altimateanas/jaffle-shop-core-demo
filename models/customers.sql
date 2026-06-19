@@ -54,7 +54,35 @@ final as (
         customer_orders.first_order,
         customer_orders.most_recent_order,
         customer_orders.number_of_orders,
-        customer_payments.total_amount as customer_lifetime_value
+        customer_payments.total_amount as customer_lifetime_value,
+
+        -- total_order_value: sum of all payment amounts per customer (0 if no payments/orders)
+        coalesce(customer_payments.total_amount, 0) as total_order_value,
+
+        -- average_order_value: avg per order, 0 for customers with no orders, division-by-zero safe
+        case
+            when coalesce(customer_orders.number_of_orders, 0) = 0 then 0
+            else coalesce(customer_payments.total_amount, 0) / customer_orders.number_of_orders
+        end as average_order_value,
+
+        -- days_since_last_order: days between most recent order and today, NULL if no orders
+        case
+            when customer_orders.most_recent_order is null then null
+            else datediff('day', customer_orders.most_recent_order, current_date)
+        end as days_since_last_order,
+
+        -- customer_lifetime_days: days between first and last order, 0 for single order, NULL for no orders
+        case
+            when customer_orders.first_order is null then null
+            else datediff('day', customer_orders.first_order, customer_orders.most_recent_order)
+        end as customer_lifetime_days,
+
+        -- customer_segment: VIP (>=10 orders), Regular (5-9), Occasional (1-4 or 0)
+        case
+            when coalesce(customer_orders.number_of_orders, 0) >= 10 then 'VIP'
+            when coalesce(customer_orders.number_of_orders, 0) >= 5  then 'Regular'
+            else 'Occasional'
+        end as customer_segment
 
     from customers
 

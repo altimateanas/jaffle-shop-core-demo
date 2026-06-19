@@ -26,8 +26,31 @@ models:
       - name: number_of_orders
         description: Count of the number of orders a customer has placed
 
-      - name: total_order_amount
+      - name: customer_lifetime_value
         description: Total value (AUD) of a customer's orders
+
+      - name: total_order_value
+        description: Sum of all payment amounts across all orders for the customer. NULL if the customer has never placed an order.
+        tests:
+          - not_null
+
+      - name: average_order_value
+        description: Average payment amount per order for the customer. Returns 0 for customers with no orders. Division-by-zero safe.
+        tests:
+          - not_null
+
+      - name: days_since_last_order
+        description: Number of days between the customer's most recent order and today. NULL for customers with no orders.
+
+      - name: customer_lifetime_days
+        description: Number of days between a customer's first and last order. Returns 0 for customers with a single order. NULL for customers with no orders.
+
+      - name: customer_segment
+        description: Customer segment based on order count. VIP customers have 10 or more orders, Regular customers have 5 to 9 orders, and Occasional customers have 1 to 4 orders or no orders.
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['VIP', 'Regular', 'Occasional']
 
   - name: orders
     description: This table has basic information about orders, as well as some derived facts based on payments
