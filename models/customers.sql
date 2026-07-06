@@ -54,13 +54,7 @@ final as (
         customer_orders.first_order,
         customer_orders.most_recent_order,
         customer_orders.number_of_orders,
-        customer_payments.total_amount as customer_lifetime_value,
-        case
-            when customer_orders.number_of_orders >= 10 then 'VIP'
-            when customer_orders.number_of_orders >= 5  then 'Regular'
-            when customer_orders.number_of_orders >= 1  then 'Occasional'
-            else 'Occasional'
-        end as customer_segment
+        customer_payments.total_amount as customer_lifetime_value
 
     from customers
 
