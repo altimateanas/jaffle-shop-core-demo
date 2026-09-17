@@ -1,7 +1,7 @@
 # Demo Script — dbt Model Refactoring on Altimate Workspaces
 
 **Audience:** dbt / analytics-engineering practitioners
-**Duration:** 12–15 minutes end-to-end
+**Duration:** 5–6 minutes end-to-end (up to 8 with the optional warehouse benchmark)
 **Branch:** `dbt-model-refactoring-demo`
 **Target model:** `customer_order_summary`
 
@@ -88,7 +88,7 @@ optional final step (Step 9) after the report is displayed. This keeps the
 main run fast and lets the audience decide whether real-warehouse numbers
 matter for them.
 
-### Step 3 — Phase 1: Baseline capture (~3 min)
+### Step 3 — Phase 1: Baseline capture (~90s)
 
 The skill will (in parallel where possible):
 - Emit static metrics for the current model (lines, joins, CTEs, largest CTE)
@@ -102,7 +102,7 @@ The skill will (in parallel where possible):
 > capturing what 'good' has to look like before it moves — row count,
 > column outputs, and downstream contracts."
 
-### Step 4 — Phase 2: Plan review (~2 min)
+### Step 4 — Phase 2: Plan review (~60s)
 
 The skill emits a plan. Expect roughly:
 
@@ -115,18 +115,20 @@ The skill emits a plan. Expect roughly:
 
 **Say "go" to approve.**
 
-### Step 5 — Phase 3: Execute (~5 min, mostly hands-off)
+### Step 5 — Phase 3: Execute (~90s, mostly hands-off)
 
-The skill creates the intermediate files, updates `schema.yml`, rewrites the
-target model, then runs `altimate-dbt compile` **once** at the end of the
-phase. Narrate:
+The skill writes ≤5 files (three ephemeral intermediates + rewritten
+target + updated `dbt_project.yml`), appends the new model entries to
+the existing `models/marts/schema.yml`, and goes straight to Phase 4.
+No standalone compile step.
 
-> "The skill batches the file writes and does one compile at the end. That's
-> a deliberate change from the old flow that compiled after every edit —
-> individual writes can't produce a syntactic surprise, so the extra
-> compiles were just eating time."
+> "The intermediates are materialized as **ephemeral**, so they inline
+> into the target model at compile time — no separate warehouse round
+> trip to create them as views. And the skill skips the standalone
+> compile step because any error will surface in Phase 4's build with
+> the same clarity."
 
-### Step 6 — Phase 4: Parity validation (~4 min)
+### Step 6 — Phase 4: Parity validation (~90s)
 
 The skill runs **one** build (`build --model +customer_order_summary+`)
 that exercises the target *and* its downstream, then runs an aggregate
@@ -140,14 +142,14 @@ falls back to `data-parity` for a full column-level diff.
 > is available if we need it, but for a clean refactor it's overkill and
 > costs a warehouse round trip we don't need."
 
-### Step 7 — Phase 5: Static optimization signals (~1 min)
+### Step 7 — Phase 5: Static optimization signals (~30s)
 
 The skill runs `sql-review` on the refactored SQL to surface remaining
 anti-patterns. It filters out warnings that match the project's own
 conventions (like `SELECT *` in import CTEs) so the "Next-step
 optimizations" list stays signal, not noise.
 
-### Step 8 — Walk the report (~3 min — the main event)
+### Step 8 — Walk the report (~60s — the main event)
 
 The skill **displays the report inline in chat**. The report is *not*
 saved to a file — persistence is not part of this skill.
@@ -173,12 +175,12 @@ for):
    payment pivot; consolidating that was out of scope for this refactor).
 
 Expected numbers (from the reference run):
-- Lines: 206 → 82 in target (−124)
-- Joins: 9 → 3
+- Lines: 218 → ~85 in target (~60% reduction)
+- Joins: 8 → 3
 - CTEs: 11 → 4
 - Repeated hardcoded literals: 8 → 0 (hoisted to `dbt_project.yml` vars)
 - Columns removed as unused: 0 (all outputs stay; downstream contract preserved)
-- Full project build after refactor: PASS=51 WARN=0 ERROR=0
+- Full project build after refactor: all green, downstream (`customer_kpis`, `orders_enriched`) unaffected
 
 Close with:
 
@@ -228,7 +230,7 @@ against its historical query stats?"*
 
 `git diff --stat` in the terminal. Audience sees:
 - 4 new files in `models/intermediate/` (three int models + schema.yml)
-- 1 rewritten `customer_order_summary.sql` (206 → 82 lines)
+- 1 rewritten `customer_order_summary.sql` (218 → ~85 lines)
 - 1 updated `dbt_project.yml` (new vars + intermediate materialization)
 - 1 updated `models/marts/schema.yml`
 

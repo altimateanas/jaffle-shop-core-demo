@@ -65,9 +65,28 @@ order_payment_pivot as (
 
 ),
 
+-- Separate lookup for "second order date" per customer. Uses a
+-- correlated subquery — one of several patterns in this file that could
+-- be a single window function pass. Kept isolated so it doesn't fan out
+-- the customer-level aggregation below.
+customer_second_order as (
+
+    select
+        user_id as customer_id,
+        min(order_date) as second_order_date
+    from raw_orders o_outer
+    where order_date > (
+        select min(o_inner.order_date)
+        from raw_orders o_inner
+        where o_inner.user_id = o_outer.user_id
+    )
+    group by user_id
+
+),
+
 -- Big monolithic customer-level aggregation. Mixes recency, frequency,
--- monetary, first-order / second-order lookups, tenure buckets, and channel flags
--- all in one CTE. Self-joins to get "second order date" and "n-th order date".
+-- monetary, tenure buckets, and channel flags all in one CTE. Recomputes
+-- the payment pivot from raw_payments instead of using stg_payments.
 customer_order_history as (
 
     select
@@ -85,7 +104,6 @@ customer_order_history as (
         sum(opp.coupon_amount) as lifetime_coupon_amount,
         sum(opp.bank_transfer_amount) as lifetime_bank_transfer_amount,
         sum(opp.gift_card_amount) as lifetime_gift_card_amount,
-        max(o2.order_date) as second_order_date,
         datediff('day', min(o1.order_date), max(o1.order_date)) as tenure_days,
         case
             when datediff('day', min(o1.order_date), max(o1.order_date)) < 30 then 'new'
@@ -106,13 +124,6 @@ customer_order_history as (
             else 'vip'
         end as monetary_segment
     from raw_orders o1
-    left join raw_orders o2
-        on o1.user_id = o2.user_id
-        and o2.order_date > (
-            select min(o3.order_date)
-            from raw_orders o3
-            where o3.user_id = o1.user_id
-        )
     left join order_payment_pivot opp
         on o1.id = opp.order_id
     group by o1.user_id
@@ -165,7 +176,7 @@ final as (
         c.last_name,
         coh.first_order_date,
         coh.most_recent_order_date,
-        coh.second_order_date,
+        cso.second_order_date,
         coh.number_of_orders,
         coh.completed_orders,
         coh.returned_orders,
@@ -198,6 +209,7 @@ final as (
         current_timestamp as _dbt_loaded_at
     from stg_customers c
     left join customer_order_history coh on c.customer_id = coh.customer_id
+    left join customer_second_order cso on c.customer_id = cso.customer_id
     left join first_order_details fod on c.customer_id = fod.customer_id
     left join most_recent_order_details mrod on c.customer_id = mrod.customer_id
 
