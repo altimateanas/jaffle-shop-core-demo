@@ -1,0 +1,39 @@
+version: 2
+
+models:
+  - name: customer_order_summary
+    description: >
+      One-stop customer + order + payment rollup used by the BI team.
+      This model has grown organically and is a known refactoring candidate.
+    columns:
+      - name: customer_id
+        description: Unique identifier for a customer
+        tests:
+          - unique
+          - not_null
+      - name: customer_lifetime_value
+        description: Total amount (USD) the customer has paid across all orders
+      - name: rfm_segment
+        description: Coarse RFM segment (champion, loyal_high_value, at_risk, trial, standard, ...)
+
+  - name: customer_kpis
+    description: BI-facing subset of customer_order_summary
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null
+
+  - name: orders_enriched
+    description: stg_orders enriched with customer segment + LTV at time of order
+    columns:
+      - name: order_id
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('customer_order_summary')
+              field: customer_id
