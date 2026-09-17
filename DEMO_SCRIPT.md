@@ -12,9 +12,11 @@
 A bloated real-world-shaped dbt model — grown organically over months —
 gets refactored on Workspaces using a custom skill (`refactor-dbt-with-report`)
 that delegates to Altimate's built-in dbt skills. The demo ends with a
-concrete, quantified before/after report the skill displays inline — and
-optionally saves as `REFACTOR_REPORT.md` if the audience wants a file to
-share.
+quantified before/after report the skill displays inline — leading with a
+plain-English **Bottleneck Summary** and an **Outcome Axes Improved** table
+(readability, maintainability, performance, cost, governance, best-practice
+compliance) — and an optional final step that measures the refactor
+against real Snowflake query history.
 
 ---
 
@@ -33,8 +35,8 @@ share.
    `query-optimize`, `lineage-diff`, `dbt-schema-verify`).
 5. (If demoing warehouse mode) confirm Snowflake profile is reachable:
    `dbt debug --target dev` should succeed.
-6. Delete any stale `REFACTOR_REPORT.md` from a previous run (only relevant
-   if you plan to demo the "save the report" prompt).
+6. If a Snowflake `customer_order_summary_before` table exists from a
+   prior run, drop it (see the reset section below).
 
 ---
 
@@ -74,22 +76,26 @@ In Workspaces, type:
 Refactor customer_order_summary using the refactor-dbt-with-report skill.
 ```
 
-The skill will ask three questions. Answer them live:
+The skill will ask **two** questions up front. Answer them live:
 
 | Question | Answer to give |
 |---|---|
 | Target model? | `customer_order_summary` |
-| Include warehouse query stats? | **Ask the room.** If they say yes and Snowflake is wired up → yes, profile `dev`, 30 days. If they hesitate → no, static-only. |
 | Parity strictness? | Row-count + spot-check hash (default) |
 
-### Step 3 — Phase 1: Baseline capture (~2 min)
+**Warehouse benchmarking is NOT asked here.** The skill offers it as an
+optional final step (Step 9) after the report is displayed. This keeps the
+main run fast and lets the audience decide whether real-warehouse numbers
+matter for them.
 
-The skill will:
+### Step 3 — Phase 1: Baseline capture (~3 min)
+
+The skill will (in parallel where possible):
 - Emit static metrics for the current model (lines, joins, CTEs, largest CTE)
 - Call `dbt-analyze` → show the downstream tree (`customer_kpis`,
   `orders_enriched`) and which columns each consumes
-- *(if warehouse=yes)* Call `cost-report` → show current avg runtime, credits,
-  run frequency for the target model
+- Materialize a `_before` snapshot of the current model + capture an
+  aggregate signature (row count, sum/min/max on `customer_lifetime_value`)
 
 **Talking point while it runs:**
 > "Notice we haven't changed a single character of SQL yet. The skill is
@@ -109,73 +115,122 @@ The skill emits a plan. Expect roughly:
 
 **Say "go" to approve.**
 
-### Step 5 — Phase 3: Execute (~3 min, mostly hands-off)
+### Step 5 — Phase 3: Execute (~5 min, mostly hands-off)
 
 The skill creates the intermediate files, updates `schema.yml`, rewrites the
-target model, and runs `altimate-dbt compile` after each change. Narrate:
+target model, then runs `altimate-dbt compile` **once** at the end of the
+phase. Narrate:
 
-> "Every file change is followed by a compile check. If anything is broken,
-> we know immediately — not after we've made 15 changes."
+> "The skill batches the file writes and does one compile at the end. That's
+> a deliberate change from the old flow that compiled after every edit —
+> individual writes can't produce a syntactic surprise, so the extra
+> compiles were just eating time."
 
-### Step 6 — Phase 4: Parity validation (~2 min)
+### Step 6 — Phase 4: Parity validation (~4 min)
 
-The skill materializes the refactored model to a sidecar name and calls
-`data-parity` against the baseline. Expected output: row counts match,
-grain-column hash matches, spot-check numeric column matches.
+The skill runs **one** build (`build --model +customer_order_summary+`)
+that exercises the target *and* its downstream, then runs an aggregate
+SQL check (count / sum / min / max on `customer_lifetime_value`) against
+the `_before` snapshot. If — and only if — that check disagrees, it
+falls back to `data-parity` for a full column-level diff.
 
 **Talking point:**
-> "This is the safety net. If we accidentally changed a `left join` to an
-> `inner join`, or dropped a NULL row somewhere, data-parity catches it here
-> — before it hits the dashboards."
+> "The safety net is a single aggregate query that catches row-count drift
+> and value drift on the grain column. It's ~200ms. Full column-hash diff
+> is available if we need it, but for a clean refactor it's overkill and
+> costs a warehouse round trip we don't need."
 
-### Step 7 — Phase 5: Post-refactor signals (~1 min, warehouse mode only)
+### Step 7 — Phase 5: Static optimization signals (~1 min)
 
-The skill runs `query-optimize` on the cleaner SQL and surfaces next-step
-recommendations (typically: this model is now a strong incremental candidate
-because the extracted intermediates make the delta pattern obvious). These
-recommendations are **not** applied — they're captured in the report as
-"next steps".
+The skill runs `sql-review` on the refactored SQL to surface remaining
+anti-patterns. It filters out warnings that match the project's own
+conventions (like `SELECT *` in import CTEs) so the "Next-step
+optimizations" list stays signal, not noise.
 
-### Step 8 — Walk the report (~2 min)
+### Step 8 — Walk the report (~3 min — the main event)
 
-The skill will **display the report inline in chat**. Walk the tables row by
-row without switching windows.
+The skill **displays the report inline in chat**. The report is *not*
+saved to a file — persistence is not part of this skill.
 
-**Static mode (no warehouse):**
-- Lines: 250 → ~30 in target (~85% reduction)
-- Joins in target: 7 → 3
-- CTEs in target: 8 → 3
-- Largest CTE: 60 → ~15 lines
-- Repeated literals: 4 → 0 (all in vars)
-- Unused columns removed: 2 (the `used_*_flag` columns nothing consumed)
+Walk the sections in this order (this is what the report was redesigned
+for):
 
-**Warehouse mode (adds):**
-- Avg runtime delta
-- Credits over window delta
-- Estimated annual savings
+1. **Bottleneck summary** (2–4 sentences at the top) — the plain-English
+   diagnosis of what made the model painful. Read this out loud verbatim.
+   This is what a data lead skims first.
+2. **Outcome axes improved** — an 8-row table showing which qualities
+   improved and *why*: Readability, Maintainability, Reusability,
+   Performance, Cost, Governance / testability, Best-practice compliance,
+   Semantic behavior preserved. Performance and Cost will show
+   **"Not measured"** — call this out honestly and use it to lead into
+   Step 9.
+3. **Code-shape metrics** — the raw before/after numbers (lines, joins,
+   CTEs, hardcoded literals). This is evidence for the axes above.
+4. **Parity evidence** — row count matches, aggregate signature matches,
+   build passed. This is the "we didn't break anything" section.
+5. **Next-step optimizations** — surviving lint findings and things
+   flagged but out of scope (e.g., `orders.sql` also duplicates the
+   payment pivot; consolidating that was out of scope for this refactor).
 
-Then walk through the "Parity evidence" section and the "Next-step
-optimizations" section. Close with:
+Expected numbers (from the reference run):
+- Lines: 206 → 82 in target (−124)
+- Joins: 9 → 3
+- CTEs: 11 → 4
+- Repeated hardcoded literals: 8 → 0 (hoisted to `dbt_project.yml` vars)
+- Columns removed as unused: 0 (all outputs stay; downstream contract preserved)
+- Full project build after refactor: PASS=51 WARN=0 ERROR=0
 
-> "This report is the deliverable. It goes in the PR description, it goes in
-> the team's #data-eng channel, and it proves the refactor was safe."
+Close with:
 
-**Then the skill asks:** *"Do you also want me to save this report to
-`REFACTOR_REPORT.md` in the project root?"*
+> "This report is the deliverable. It goes in the PR description, it goes
+> in the team's #data-eng channel, and it explains which qualities got
+> better — not just that lines went down."
 
-- **For a live customer-facing demo:** answer **yes** so you can screenshot
-  the file, drop it into a follow-up email, or open it side-by-side.
-- **For a quick internal walkthrough:** answer **no** — the inline display
-  is enough and it keeps the repo clean between runs.
+### Step 9 — (Optional) warehouse benchmark on real query history (~3 min)
 
-### Step 9 — (Optional, 30s) show the diff
+**This is the new final beat.** After displaying the report, the skill
+asks: *"Would you like to run a warehouse benchmark now to measure real
+runtime, bytes scanned, and credits — comparing the refactored model
+against its historical query stats?"*
+
+- **For a customer-facing demo where cost matters** → answer **yes**.
+  The skill will ask which warehouse profile and how many days of history
+  to compare, then:
+  1. Read the **historical baseline** from
+     `SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY` via `cost-report` (this is
+     an *average* over N days — needs history because
+     `ACCOUNT_USAGE` has ~45 min ingestion lag).
+  2. Trigger one **fresh run** of the refactored model.
+  3. Read the fresh run's runtime + bytes from
+     `INFORMATION_SCHEMA.QUERY_HISTORY_BY_WAREHOUSE()` (near-realtime —
+     visible within seconds).
+  4. **Append** a warehouse-metrics block to the already-displayed
+     report and flip the Performance and Cost rows in "Outcome axes
+     improved" from "Not measured" to real Yes/No with numbers.
+
+  **Framing to use with the audience:** *"Before is the average of the
+  last 30 days — this model ran ~400 times, so the number is stable.
+  After is a single fresh run of the refactored version, read seconds
+  after it finished. Different sources, on purpose — Snowflake's
+  ACCOUNT_USAGE has a 45-minute ingestion lag, so we can't use it for
+  the fresh run."*
+
+- **For a quick walkthrough or no-warehouse setup** → answer **no**.
+  The static report already stands on its own.
+
+- **Common gotcha:** if `cost-report` returns zero historical rows (the
+  model has never run in prod, or `ACCOUNT_USAGE` grants are missing),
+  the skill will stop and say so. It will NOT fabricate a "before"
+  number from a single run of the old code. In that case, skip Step 9
+  and rely on the static report.
+
+### Step 10 — (Optional, 30s) show the diff
 
 `git diff --stat` in the terminal. Audience sees:
-- 3 new small files in `models/marts/intermediate/`
-- 1 rewritten `customer_order_summary.sql`
-- 1 updated `dbt_project.yml` (new vars)
+- 4 new files in `models/intermediate/` (three int models + schema.yml)
+- 1 rewritten `customer_order_summary.sql` (206 → 82 lines)
+- 1 updated `dbt_project.yml` (new vars + intermediate materialization)
 - 1 updated `models/marts/schema.yml`
-- 1 new `REFACTOR_REPORT.md` *(only if you said "yes" to save in Step 8)*
 
 ---
 
@@ -183,17 +238,15 @@ optimizations" section. Close with:
 
 ```bash
 git checkout .
-git clean -fd models/marts/intermediate/  # only if the skill created this dir
-rm -f REFACTOR_REPORT.md
+git clean -fd models/intermediate/  # only if the skill created this dir
 git status  # should be clean
 ```
 
-If the skill materialized `_before` / `_after` sidecar tables in Snowflake
-that it did not clean up, drop them:
+If the skill left a `_before` sidecar table in Snowflake it did not clean
+up, drop it:
 
 ```sql
-DROP SCHEMA IF EXISTS <db>.refactor_baseline_<yyyymmdd>;
-DROP SCHEMA IF EXISTS <db>.refactor_candidate_<yyyymmdd>;
+DROP TABLE IF EXISTS <db>.<schema>.customer_order_summary_before;
 ```
 
 ---
@@ -204,7 +257,7 @@ DROP SCHEMA IF EXISTS <db>.refactor_candidate_<yyyymmdd>;
 |---|---|
 | Skill can't find `dbt-analyze` | Confirm Altimate skills are enabled in Workspaces settings. Fall back to static-only mode. |
 | `data-parity` fails on row count | This is the demo's best moment — say "this is why we do it". Show the diff, roll back, do not deploy. |
-| Warehouse mode times out | Cancel and re-run in static-only mode. The report still lands with code-shape metrics. |
+| Warehouse benchmark (Step 9) times out or errors | Skip it — the static report displayed in Step 8 already stands alone. |
 | `dbt compile` fails after Phase 3 | Skill will surface the error. Read it out loud, fix the one line, re-run compile. |
 | Report shows no downstream consumers | You forgot to seed `customer_kpis` / `orders_enriched`. Check the branch. |
 
