@@ -3,3 +3,9 @@ target/
 dbt_modules/
 logs/
 **/.DS_Store
+
+# Local workspace tooling — not part of the demo repo
+altimate-backend/
+altimate-code/
+altimate-frontend/
+.vscode/
