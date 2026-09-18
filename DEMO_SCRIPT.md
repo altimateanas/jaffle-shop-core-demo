@@ -58,11 +58,12 @@ Confirm in Workspaces:
 1. Repo opened on branch `dbt-model-refactoring-demo`.
 2. Setup the dbt profiles.yml with your Snowflake credentials ` ~/.dbt/profiles.yml → jaffle_shop.target: dev` and make sure it connects (`dbt debug`).
 3. Make sure you have a workspace linked with skill : `refactor-dbt-with-report` in `SKILL.md` format. For this take the skill from repo `jaffle-shop-core-demo/refactor-dbt-with-report_SKILL.md` and attach it to your workspace. Once done, delete this skill from your repo to avoid confusion.
-4. If a stale sidecar snapshot exists from a prior run, drop it:
+4. Remove files `refactor-dbt-with-report_SKILL.md` and `jaffle-shop-core-demo/DEMO_SCRIPT.md` from your repo as they may cause confusion.
+5. If a stale sidecar snapshot exists from a prior run, drop it:
    ```sql
    DROP TABLE IF EXISTS anas.js_dbt.customer_order_summary_before;
    ```
-5. Once you have workspace connected, go ahead with your prompt:
+6. Once you have workspace connected, go ahead with your prompt:
 In Workspaces:
 ```
 Refactor customer_order_summary model.
