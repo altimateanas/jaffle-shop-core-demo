@@ -1,0 +1,67 @@
+version: 2
+
+models:
+  - name: customer_lifetime_summary
+    description: >
+      Customer-level lifetime rollup used by the weekly marketing dashboard.
+      Adds tenure and value-segment classification on top of `customers`.
+    meta:
+      owner: analytics-engineering@altimate.ai
+      team: analytics
+    columns:
+      - name: customer_id
+        description: Unique identifier for a customer
+        tests:
+          - unique
+          - not_null
+      - name: value_segment
+        description: Coarse lifetime-value segment (vip, high_value, mid_value, low_value)
+        tests:
+          - accepted_values:
+              values: ['vip', 'high_value', 'mid_value', 'low_value']
+      - name: tenure_days
+        description: Days between first and most recent order
+
+  - name: orders_enriched
+    description: >
+      Orders joined with customer identity and lifetime context.
+      Consumed by the finance MRR review dashboard.
+    meta:
+      owner: analytics-engineering@altimate.ai
+      team: analytics
+    columns:
+      - name: order_id
+        description: Unique identifier for an order
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+        description: Foreign key to customers
+        tests:
+          - not_null
+          - relationships:
+              to: ref('customers')
+              field: customer_id
+
+exposures:
+  - name: weekly_marketing_dashboard
+    type: dashboard
+    maturity: high
+    url: https://looker.altimate.ai/dashboards/weekly-marketing
+    description: Weekly marketing KPI dashboard — segment mix, LTV cohorts, acquisition trends.
+    depends_on:
+      - ref('customer_lifetime_summary')
+    owner:
+      name: Marketing Analytics
+      email: marketing-analytics@altimate.ai
+
+  - name: finance_mrr_review
+    type: dashboard
+    maturity: high
+    url: https://looker.altimate.ai/dashboards/finance-mrr
+    description: Finance MRR + revenue review, joined by order channel.
+    depends_on:
+      - ref('orders_enriched')
+    owner:
+      name: Finance Analytics
+      email: finance-analytics@altimate.ai
