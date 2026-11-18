@@ -29,6 +29,15 @@ models:
       - name: total_order_amount
         description: Total value (AUD) of a customer's orders
 
+      - name: first_order_channel
+        description: >
+          Payment channel of the customer's first order (earliest order_date, order_id as tiebreaker).
+          One of credit_card, coupon, bank_transfer, gift_card, or mixed when the first order combined
+          more than one payment method. NULL for customers with no orders or whose first order has no payment.
+        tests:
+          - accepted_values:
+              values: ['credit_card', 'coupon', 'bank_transfer', 'gift_card', 'mixed']
+
   - name: orders
     description: This table has basic information about orders, as well as some derived facts based on payments
 
